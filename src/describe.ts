@@ -60,10 +60,9 @@ export type DescribeOptions = {
 	cancelled?: boolean;
 };
 
-/** Lines the program keeps while the tool card is folded; the card's expand shows the rest. */
-const PROGRAM_PREVIEW_LINES = 8;
-/** Lines of one nested call's own output shown while collapsed. */
-const AUDIT_RESULT_LINES = 6;
+/** Lines a block keeps while the tool card is folded; the card's expand shows the rest. */
+const PROGRAM_PREVIEW_LINES = 4;
+const OUTPUT_PREVIEW_LINES = 4;
 const AUDITS_COLLAPSED = 8;
 const AUDITS_EXPANDED = 30;
 const DETAIL_CHARS = 72;
@@ -227,7 +226,7 @@ function resultNode(audit: FabricAudit): NativeChild | undefined {
 	return {
 		k: "ansi",
 		key: "output",
-		p: { text, preview: { lines: AUDIT_RESULT_LINES }, role: "omp-fabric.output" },
+		p: { text, preview: { lines: OUTPUT_PREVIEW_LINES }, role: "omp-fabric.output" },
 	};
 }
 

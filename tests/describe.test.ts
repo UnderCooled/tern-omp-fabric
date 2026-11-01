@@ -103,7 +103,7 @@ describe("describeFabricCall", () => {
 		expect(program.k).toBe("code");
 		expect(props(program).role).toBe("omp-fabric.program");
 		expect(props(program).collapsed).toBeUndefined();
-		expect(previewLines(program)).toBe(8);
+		expect(previewLines(program)).toBe(4);
 		expect(props(program).text).toBe(programText(fabricCallArgs));
 		expect(props(program).lang).toBe("typescript");
 	});
@@ -225,9 +225,9 @@ describe("per-call rendering", () => {
 		return unwrap(auditSections(view)[0], "audit section");
 	}
 
-	test("string result becomes an ansi node with 6 preview lines", () => {
+	test("an output is clamped to 4 lines until the card expands", () => {
 		const ansi = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
-		expect(previewLines(ansi)).toBe(6);
+		expect(previewLines(ansi)).toBe(4);
 	});
 
 	test("a structured result is drawn as terminal text, not highlighted JSON", () => {
@@ -237,7 +237,7 @@ describe("per-call rendering", () => {
 		expect(byKind(section.c, "code")).toBeUndefined();
 		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
 		expect(props(ansi).text).toContain('"lines": 40');
-		expect(previewLines(ansi)).toBe(6);
+		expect(previewLines(ansi)).toBe(4);
 	});
 
 	test("an envelope result shows only its output field", () => {

@@ -160,6 +160,12 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, tenth pass (folded previews are four lines)
+
+`PROGRAM_PREVIEW_LINES` 8 -> 4 and the output clamp (`AUDIT_RESULT_LINES`), renamed `OUTPUT_PREVIEW_LINES`, 6 -> 4.
+
+`bun test` 31 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, ninth pass (output text only, drawn as-a-terminal)
 
 | Ask | Change |

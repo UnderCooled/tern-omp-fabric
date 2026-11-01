@@ -43,7 +43,7 @@ A `fabric_exec` step reads, top to bottom:
 ```text
 Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
 │ (the model's description, when it sent one)
-│ const [a, b] = await Promise.all([…        ← the program, 8 lines; whole once the card opens
+│ const [a, b] = await Promise.all([…        ← the program, 4 lines; whole once the card opens
 │ ▸ calls                                    ← open: phases, then one block per call
 │     [discover] [report]
 │     grep /foo/ in src · 24ms               ← the call, then only its own output
@@ -68,7 +68,7 @@ so the space under it belongs to what came back.
 The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
 under) beside the counted facts, so the body has no trailing status line.
 
-The program is a plain code block clamped to 8 lines: opening the card with `ctrl+o`
+The program and every call output are clamped to 4 lines: opening the card with `ctrl+o`
 (`app.tools.expand`) gives way to the whole block, exactly as a code block behaves inside a folded
 disclosure. The `calls` section and each call row fold on their own. The Tern plugin adds a palette
 row for the expand — **omp fabric: expand tool output** — so it is reachable without knowing the
@@ -90,7 +90,7 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   clipboard, and the same code's context menu offers Copy.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
-  to be read; here it is the first thing under the head, clamped to eight lines.
+  to be read; here it is the first thing under the head, clamped to four lines.
 - Each nested call is its own block, open by default: its head and the output fabric recorded for
   it (`audit.result`), so two calls never share one body. Each row folds away on its own head when a
   program made many calls, and the output is what the sheet rings.
