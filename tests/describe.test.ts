@@ -455,33 +455,37 @@ describe("an edit answers with a diff", () => {
 		expect(props(diff).hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
 	});
 
-	test("a capped details still yields the diff fabric kept in its preview", () => {
-		for (const [preview, rows] of [
-			['{"diff":" 1|a\\n-2|b\\n+2|B","firstChangedLine":2}', [" a", "-b", "+B"]],
-			['{"diff":" 1|a\\n-2|b\\n+2|B\\n 3|half-writ', [" a", "-b", "+B"]],
-		] as const) {
-			const view = unwrap(
-				describeFabricResult(
-					{
-						content: [],
-						details: {
-							audits: [
-								{
-									...editAudit,
-									result: { ok: true, output: "[a.ts]\\n1:x", details: { fabricTruncated: true, originalChars: 34570, preview } },
+	test("an edit whose details fabric capped draws no output at all", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						audits: [
+							{
+								...editAudit,
+								result: {
+									ok: true,
+									output: "[a.ts]\\n1:x",
+									details: {
+										fabricTruncated: true,
+										originalChars: 34570,
+										preview: '{"diff":" 1|a\\n-2|b\\n+2|B"}',
+									},
 								},
-							],
-						},
+							},
+						],
 					},
-					options,
-					fabricCallArgs,
-				),
-				"capped-details view",
-			);
-			const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff block");
-			const hunks = props(diff).hunks as { lines: string[] }[];
-			expect(hunks.flatMap(hunk => hunk.lines)).toEqual([...rows]);
-		}
+				},
+				options,
+				fabricCallArgs,
+			),
+			"capped-details view",
+		);
+		// A prefix of a diff reads as the whole change: no block, and no marker either.
+		expect(kindList(view.body)).toEqual(["section", "text"]);
+		expect(byKey(view.body, "output:0")).toBeUndefined();
+		expect(joined(textSpans(unwrap(nodes(view.body)[1], "call line")))).toBe("edit src/a.ts · 300ms");
 	});
 
 	test("a result fabric itself truncated says so instead of pasting JSON", () => {

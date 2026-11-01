@@ -160,15 +160,16 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
-## Revision 2026-11-01, twenty-fourth pass (diff from a capped details)
+## Revision 2026-11-01, twenty-fourth pass (no block for a capped details)
 
 Half the `omp.edit` audits in this session's transcript carry `details` as `{fabricTruncated,
 originalChars, preview}`: fabric replaces a details object serialising past 16 KB with its own JSON
-text, cut at 15 900 chars. That text still starts with `{"diff":"…`, so `salvageDiff` reads the value
-out of it (unescaping, dropping the last row when the quote never closed) and `editDiff` uses those
-rows before falling back to `oldText`/`newText`. The `[README.md]` first line of an edit's `output` is
-not involved: nothing in the diff path reads `output`. Measured on a real 34 570-char audit: 6 rows,
-one hunk, instead of the plain excerpt the block showed before.
+text, cut at 15 900 chars. A prefix of a diff reads as the whole change, so those calls now draw no
+output block and no `(no output)` marker either — `cappedDetails` is what tells `outputNode` and
+`callBlock` apart, and the line keeps just the tool, the file and the duration. The `[README.md]`
+first line of an edit's `output` was never involved: nothing in the diff path reads `output`. A
+recovered-prefix renderer was tried and removed; measured on a real 34 570-char audit it produced 6
+of the change's rows, which is the misleading half-fact this rule avoids.
 
 ## Revision 2026-11-01, twenty-third pass (a bash command is a code block)
 

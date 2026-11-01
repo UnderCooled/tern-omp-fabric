@@ -293,52 +293,19 @@ function diffFromTexts(oldText: string, newText: string): DiffHunk[] | undefined
 	return [{ oldStart: contextBefore + 1, newStart: contextBefore + 1, lines }];
 }
 
-/**
- * The `diff` field out of the JSON text fabric kept when it capped `details`:
- * the string is cut mid-value, so the last row is dropped unless its quote closed.
- */
-function salvageDiff(preview: unknown): string | undefined {
-	if (typeof preview !== "string") return undefined;
-	const open = '"diff":"';
-	const start = preview.indexOf(open);
-	if (start < 0) return undefined;
-	let index = start + open.length;
-	let text = "";
-	let closed = false;
-	while (index < preview.length) {
-		const char = preview[index];
-		if (char === "\\") {
-			const escape = preview[index + 1];
-			if (escape === undefined) break;
-			text += escape === "n" ? "\n" : escape === "t" ? "\t" : escape === "r" ? "" : escape;
-			index += 2;
-			continue;
-		}
-		if (char === '"') {
-			closed = true;
-			break;
-		}
-		text += char;
-		index += 1;
-	}
-	const rows = text.split("\n");
-	if (!closed) rows.pop();
-	const kept = rows.join("\n");
-	return kept.trim() === "" ? undefined : kept;
+/** The `details` object fabric replaced with its own cut JSON text, when it capped it. */
+function cappedDetails(result: unknown): boolean {
+	return isRecord(result) && isRecord(result.details) && result.details.fabricTruncated === true;
 }
 
 /**
  * The diff an edit answered with: `details.diff` (omp's `<marker><line>|text`
- * rows) when it survived, else the same rows recovered from fabric's 16 KB
- * preview of the capped `details`, else one built from `details.oldText`/`newText`,
- * so an edit never falls back to a plain excerpt just because a field was capped.
+ * rows) when it survived, else one built from `details.oldText`/`newText`.
  */
 function editDiff(result: unknown): { hunks: DiffHunk[]; path?: string } | undefined {
 	if (!isRecord(result)) return undefined;
 	const details = isRecord(result.details) ? result.details : result;
-	// fabric replaces a too-large details object with its own cut JSON text.
-	const salvaged = details.fabricTruncated === true ? salvageDiff(details.preview) : undefined;
-	const raw = typeof details.diff === "string" ? details.diff : salvaged;
+	const raw = typeof details.diff === "string" ? details.diff : undefined;
 	const hunks = raw === undefined ? undefined : parseOmpDiff(raw);
 	const oldText = typeof details.oldText === "string" ? details.oldText : undefined;
 	const newText = typeof details.newText === "string" ? details.newText : undefined;
@@ -392,7 +359,10 @@ function outputNode(
 		return muted("result truncated by fabric (" + size + ")");
 	}
 	// An edit answers with a diff: Tern draws that as a diff, not as a block of text.
+	// When fabric capped that answer only a prefix survives, and a prefix reads as the
+	// whole change; the call line names the file and the block stays away.
 	const diff = editDiff(result);
+	if (diff === undefined && cappedDetails(result)) return undefined;
 	const text = diff === undefined ? resultText(result) : undefined;
 	if (diff === undefined && text === undefined) return muted("result not shown");
 	const flat = text?.trim();
@@ -497,7 +467,8 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
 	const body = outputNode(audit, index, options, display.fold);
 	const head = callHead(audit);
-	if (body === undefined) {
+	// A capped details was not "no output": it was output nobody can vouch for.
+	if (body === undefined && !cappedDetails(audit.result)) {
 		const fact = headFact(display, audit.result);
 		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
 	}
