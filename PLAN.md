@@ -160,6 +160,23 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, sixth pass (status in the head, one open level)
+
+| Ask | Change |
+| --- | --- |
+| the outcome belongs on the title row | `footLine` and `metaLine` are gone. `statusFacts` returns head facts: `✓ Done · 2.4s` (success), `✗ Failed` (error), `✗ Cancelled` (warning), or `timeout 30s` while the call runs (`pendingFacts`, which the call view uses too). `NativeToolHead.meta` takes `TspText`, so a fact can be a span run. |
+| `calls` open one level by default | `section collapsed: false`; the audit sections inside stay folded. |
+| the output shows six lines | program and value are plain `code` blocks (`preview: { lines: 8 }` / `6`) — a nested section's preview gives way inside a folded disclosure, the code block's does not. Opening the card (`options.expanded`) makes both show whole, which is the behaviour asked for. |
+| no hairline | the sheet drops the `call`/`foot` borders it had and suppresses `.sf-tool-hr` inside the fabric tool card; the rings on program and value stay. |
+
+Consequences: `codeSection`/`programSection`/`valueSection`/`footLine`/`metaLine`/`joinSpans` deleted; `codeBlock` and
+`COPY_ACTION` added; `logs` stays a folded section because logs are not the answer. Body: `program, calls, logs,
+output`.
+
+Verification: `bun test` 32 pass / 0 fail, `bun run typecheck` clean, smoke over `index.ts` prints the head facts
+with the outcome last and the four body nodes; `tern plugin reload omp-fabric` exits 0 and the daemon log shows the
+reload with no `plugin style sheet has errors`. Rings and hairline suppression are for the eye at the pane.
+
 ## Revision 2026-11-01, fifth pass (the directory line goes)
 
 The meta line carried the session's working directory; it earned nothing on screen. Removed end to

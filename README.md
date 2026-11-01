@@ -41,47 +41,50 @@ halves reload on save.
 A `fabric_exec` step reads, top to bottom:
 
 ```text
-Fabric   Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases   ← head: verb and counts
-│ 1.2s · timeout 30s                                  ← walltime, timeout
+Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
 │ (the model's description, when it sent one)
-│ ▸ program                                           ← folded: its head unfolds, click copies
-│ ▸ calls                                  ← folded: phases, then one row per call
+│ const [a, b] = await Promise.all([…        ← the program, 8 lines; whole once the card opens
+│ ▸ calls                                    ← open one level: phases, then one row per call
 │     [discover] [report]
-│     ▸ grep  /foo/ in src · 24ms           ← that call's own args and output, behind its head
+│     ▸ grep  /foo/ in src · 24ms            ← a call's args and output, behind its own head
 │     ▸ mcp.do_thing  deploy · failed · 3.1s
-│ ▸ logs                                    ← what the program printed, folded on its own
-│ ▸ output · 12 lines                       ← the value it returned, a separate fold
-│ ✓ Done · 2.4s
+│ ▸ logs                                     ← what the program printed, folded
+│ todos:                                     ← the returned value, 6 lines; whole once the card
+│   - src/a.ts                                     opens
 ```
 
-The folds come from omp (a `section` per block); the frames come from this plugin's Tern
-stylesheet, not from the node tree: the protocol gives a tool call exactly one ring and flattens
-anything framed inside its body (`elements/work.html#tool`), so a nested `card` loses both its border and
-its fold. `tern/style.css` draws the ring per role instead — `[data-role="omp-fabric.program"]` and its
-siblings — which is the half of this plugin that only Tern can do.
+The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
+under) beside the counted facts, so the body has no trailing status line.
 
-Every fold is the terminal's own state: the section heads unfold and refold independently, and
-`ctrl+o` (`app.tools.expand`) still expands the whole card. The Tern plugin adds a palette row for
-the same action — **omp fabric: expand tool output** — so it is reachable without knowing the
-chord; it types `ctrl+o` into the focused omp pane.
+Only two things fold on their own — the `calls` section and the `logs` one. The program and the
+returned value are plain code blocks clamped to 8 and 6 lines: opening the card with `ctrl+o`
+(`app.tools.expand`) gives way to the whole block, exactly as a code block behaves inside a folded
+disclosure. The Tern plugin adds a palette row for the same action — **omp fabric: expand tool
+output** — so it is reachable without knowing the chord; it types `ctrl+o` into the focused omp pane.
+
+The rings around the program and the value are this plugin's Tern sheet, not the node tree: the
+protocol gives each tool call exactly one frame and flattens anything framed inside its body
+(`elements/work.html#tool`), so a nested `card` loses both its border and its fold. `tern/style.css` draws
+them per role and suppresses the tool's own hairlines — that is the half only Tern can do.
 
 ### Where this parts from omp's TUI
 
-- The head carries the verb and the counted facts — `Sweep TODOs · TypeScript · 42 lines · 3 calls ·
-  1 failed · 2 phases` — and no target line and no Copy command: the program itself is the body,
-  so repeating its first line up there would say the same thing twice.
+- The head carries the verb, the counted facts and the outcome — `Sweep TODOs · TypeScript · 42
+  lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s` — and no target line and no Copy command:
+  the program itself is the body, so repeating its first line up there would say the same thing
+  twice. The outcome sits in the head rather than on a trailing line, which is also where omp's
+  own card keeps it.
 - Copy rides on the code: a click on the program block's code puts the whole program on the
-  clipboard, and the same code's context menu offers Copy. The output block copies the same way.
+  clipboard, and the same code's context menu offers Copy. The returned value copies the same way.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
-  to be read; here it is the first thing under the head, folded.
-- The call names its own timing: the walltime and the invocation's `timeoutMs` while it runs.
-- The foot line says how the program ended and how long it took (`✓ Done · 2.4s`, `✗ Failed`,
-  `✗ Cancelled`), and says `timeout 30s` instead while the call has not returned.
+  to be read; here it is the first thing under the head, clamped to eight lines.
 - Each nested call is its own fold: arguments and output stay behind that call's head, so two
-  calls never share one body, and the head row alone is what a settled card shows.
-- The program's own result is two folds, not one block: `logs` (what it printed) and `output` (the
-  value it returned), split where fabric marks the value's first line (`outputFormatStartLine`).
+  calls never share one body. The `calls` section holding them starts open, so a settled card shows
+  one row per call without a click.
+- The program's own result is two things, not one block: `logs` (what it printed, folded) and the
+  returned value (six lines, whole once the card opens), split where fabric marks the value's
+  first line (`outputFormatStartLine`).
 
 ## Limits
 
