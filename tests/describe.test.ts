@@ -225,13 +225,13 @@ describe("when a call shows its output", () => {
 		);
 	}
 
-	test("a slow call gets an output fold, counted in its head", () => {
+	test("a slow call gets an output fold that starts open", () => {
 		const view = render(slowAudit);
 		const output = unwrap(byKey(view.body, "output:0"), "output fold");
 		expect(output.k).toBe("section");
 		expect(props(output).role).toBe("omp-fabric.output");
 		expect(props(output).collapsible).toBe(true);
-		expect(props(output).collapsed).toBe(true);
+		expect(props(output).collapsed).toBe(false);
 		// Named after its call: two output folds side by side must be tellable apart.
 		expect(joined(headSpans(output))).toBe("bash output · 6 lines");
 	});
@@ -244,7 +244,7 @@ describe("when a call shows its output", () => {
 		expect(props(ansi).preview).toBeUndefined();
 	});
 
-	test("a fast working call gets one too, and it starts folded", () => {
+	test("a fast call keeps its fold closed", () => {
 		const output = unwrap(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")).body, "output:0"), "output fold");
 		expect(props(output).collapsed).toBe(true);
 	});

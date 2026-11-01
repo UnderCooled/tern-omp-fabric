@@ -213,6 +213,13 @@ function callDuration(audit: FabricAudit): number | undefined {
 	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
 
+/** Two seconds of waiting is where a call's output stops being noise: it opens by itself. */
+const SLOW_CALL_MS = 2000;
+
+function slowCall(audit: FabricAudit): boolean {
+	return (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
+}
+
 /** What the call ran, as the head names it: `grep`, `read`, `bash`. */
 function callLabel(audit: FabricAudit): string {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
@@ -258,7 +265,7 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 			],
 			role: "omp-fabric.output",
 			collapsible: true,
-			collapsed: options.expanded !== true,
+			collapsed: options.expanded !== true && !slowCall(audit),
 		},
 		c: [{ k: "ansi", key: `output:${index}:text`, p: { text, role: "omp-fabric.output-text" } }],
 	};

@@ -160,6 +160,14 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, eighteenth pass (slow calls open their own output fold)
+
+`SLOW_CALL_MS` is back, used only for the starting state: `collapsed: options.expanded !== true &&
+!slowCall(audit)`. Every call still gets its row; only a call that took two seconds or more opens.
+
+`bun test` 34 pass / 0 fail, `bun run typecheck` clean; smoke shows `output:0 collapsed true` (24 ms)
+and `output:1 collapsed false` (5.2 s).
+
 ## Revision 2026-11-01, seventeenth pass (every call gets its output row)
 
 `SLOW_CALL_MS` and the "only if slow or failed" gate are gone. A fold is one row while collapsed, so
