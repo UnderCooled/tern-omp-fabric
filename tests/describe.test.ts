@@ -262,6 +262,20 @@ describe("when a call shows its output", () => {
 		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }).body, "output:0")).toBeDefined();
 	});
 
+	test("a call that printed nothing says so on its line, with no fold", () => {
+		for (const result of ["(no output)", "   "]) {
+			const view = render({ ...slowAudit, result, endedAt: 9000 });
+			expect(byKey(view.body, "output:0")).toBeUndefined();
+			const line = unwrap(
+				nodes(view.body).find(node => props(node).role === "omp-fabric.call"),
+				"call line",
+			);
+			const spans = textSpans(line);
+			const marker = unwrap(spans[spans.length - 1], "the marker span");
+			expect(marker).toEqual({ t: "(no output)", s: "warning strong" });
+		}
+	});
+
 	test("expanding the card opens every fold", () => {
 		const view = render(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
 		expect(props(unwrap(byKey(view.body, "program"), "program fold")).collapsed).toBe(false);

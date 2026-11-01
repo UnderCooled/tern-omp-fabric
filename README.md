@@ -96,7 +96,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   recorded for it (`audit.result`), in a fold named after that call. Every call that returned something
   gets one: the row costs a line, and a gap in the column reads as output that went missing. A call
   that took two seconds or more opens its fold by itself, so a slow step shows what it produced
-  without a click. Two calls never share a body, and the output is what the sheet rings.
+  without a click. A call that printed nothing gets no fold at all — its line ends in a warning
+  `(no output)` instead, where the eye already is. Two calls never share a body, and the output is
+  what the sheet rings.
 - An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed
   into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
   rendering instead of a monospaced paste of the post-edit excerpt. When that field did not survive

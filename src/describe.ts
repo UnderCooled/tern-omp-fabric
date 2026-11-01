@@ -352,7 +352,9 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 	const diff = editDiff(result);
 	const text = diff === undefined ? resultText(result) : undefined;
 	if (diff === undefined && text === undefined) return muted("result not shown");
-	if (text !== undefined && text.trim() === "") return undefined;
+	const flat = text?.trim();
+	// "(no output)" is the tool saying it printed nothing: not a block worth folding.
+	if (flat === "" || flat === NO_OUTPUT) return undefined;
 	const lines =
 		diff === undefined ? (text ?? "").split("\n").length : diff.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
 	return {
@@ -383,17 +385,23 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 	};
 }
 
+/** What a tool prints when it changed nothing: a fold would only hold that line. */
+const NO_OUTPUT = "(no output)";
+
 /**
  * One call: its line, then its output in a fold of its own. Every call that
  * returned something gets that fold — it is one row while folded, so there is
  * nothing to spare by hiding it, and a gap in the column only makes the reader
- * wonder what went missing.
+ * wonder what went missing. A call that printed nothing says so on its line
+ * instead, where the eye already is.
  */
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
-	const nodes: NativeChild[] = [
-		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: callHead(audit), role: "omp-fabric.call" } },
-	];
 	const body = resultNode(audit, index, options);
+	const head = callHead(audit);
+	if (body === undefined) head.push(span(" ", "muted"), span(NO_OUTPUT, "warning strong"));
+	const nodes: NativeChild[] = [
+		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: head, role: "omp-fabric.call" } },
+	];
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
 	if (audit.success === false && audit.error) {

@@ -160,6 +160,14 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twenty-first pass (no fold for a call that printed nothing)
+
+`(no output)` is the tool saying it printed nothing, so it does not deserve a fold: `resultNode` returns
+undefined for it (as for a blank result), and `callBlock` appends a `warning strong` `(no output)` span to
+the call line instead — at its right end, where the eye already is.
+
+`bun test` 41 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, twentieth pass (diff fallbacks, and honesty about caps)
 
 Some edit blocks showed no diff. Every shape reachable from this machine reproduced fine (single,
