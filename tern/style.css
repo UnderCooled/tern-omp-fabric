@@ -1,0 +1,54 @@
+/*
+ * tern-omp-fabric: the frame around fabric_exec's blocks.
+ *
+ * omp describes the transcript and Tern draws it, and the surface protocol
+ * allows one ring per tool call: anything framed inside the body is flattened.
+ * A border is a Tern concern, so it is drawn here, by role, instead of being
+ * sent as a node omp cannot nest.
+ *
+ * Roles come from src/describe.ts. Everything colors through Tern's variables
+ * so the sheet follows the user's theme (--l1 is the hairline color, --t3 the
+ * meta text, --code-bg a code well).
+ */
+
+[data-role="omp-fabric.program"],
+[data-role="omp-fabric.calls"],
+[data-role="omp-fabric.logs"],
+[data-role="omp-fabric.output"] {
+	border: 1px solid var(--l1);
+	border-radius: 8px;
+	padding: 4px 10px;
+	margin: 6px 0;
+}
+
+/* A nested call: a hairline, not a ring, so a list of calls stays dense. */
+[data-role="omp-fabric.call"] {
+	border-top: 1px solid var(--l1);
+	padding: 2px 0 2px 6px;
+}
+
+[data-role="omp-fabric.call"]:first-child {
+	border-top: none;
+}
+
+/* The code blocks carry no frame of their own inside a tool body: give the
+   program a quiet well so it reads as one object with the fold above it. */
+[data-role="omp-fabric.program"] .sf-code,
+[data-role="omp-fabric.logs"] .sf-code,
+[data-role="omp-fabric.output"] .sf-code {
+	background: var(--code-bg);
+	border-radius: 6px;
+	padding: 4px 8px;
+	margin-top: 4px;
+}
+
+/* The head line under the tool: the call's own facts, and the settled outcome. */
+[data-role="omp-fabric.meta"] {
+	margin-top: 2px;
+}
+
+[data-role="omp-fabric.foot"] {
+	border-top: 1px solid var(--l1);
+	margin-top: 8px;
+	padding-top: 4px;
+}

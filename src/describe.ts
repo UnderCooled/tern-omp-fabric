@@ -311,12 +311,13 @@ function codeSection(
 	text: string,
 	lang: string | undefined,
 	copyTitle: string,
+	folded: boolean,
 	start?: number,
 ): NativeChild {
 	return {
 		k: "section",
 		key,
-		p: { role, head, collapsible: true, collapsed: true },
+		p: { role, head, collapsible: true, collapsed: folded },
 		c: [
 			{
 				k: "code",
@@ -328,7 +329,7 @@ function codeSection(
 }
 
 /** The program, folded: unfolded by its head, copied by a click on the code. */
-function programSection(program: string): NativeChild {
+function programSection(program: string, folded: boolean): NativeChild {
 	return codeSection(
 		"program",
 		"omp-fabric.program",
@@ -336,6 +337,7 @@ function programSection(program: string): NativeChild {
 		program,
 		"typescript",
 		"Click the code to copy the program",
+		folded,
 	);
 }
 
@@ -356,7 +358,7 @@ function callsSection(audits: FabricAudit[], phases: string[], options: Describe
 	return {
 		k: "section",
 		key: "calls",
-		p: { head: [span(label, "muted")], role: "omp-fabric.calls", collapsible: true, collapsed: true },
+		p: { head: [span(label, "muted")], role: "omp-fabric.calls", collapsible: true, collapsed: options.expanded !== true },
 		c: children,
 	};
 }
@@ -387,7 +389,7 @@ function footLine(
 }
 
 /** The return value in its own fold. */
-function valueSection(text: string, details: FabricDetails): NativeChild {
+function valueSection(text: string, details: FabricDetails, folded: boolean): NativeChild {
 	const lines = text.split("\n").length;
 	return codeSection(
 		"output",
@@ -396,6 +398,7 @@ function valueSection(text: string, details: FabricDetails): NativeChild {
 		text,
 		details.outputFormat,
 		"Click the code to copy the output",
+		folded,
 	);
 }
 
@@ -405,7 +408,7 @@ function valueSection(text: string, details: FabricDetails): NativeChild {
  * (outputFormatStartLine); splitting them keeps two different things out of one
  * block, and each lands in its own fold.
  */
-function outputNodes(content: unknown, details: FabricDetails): NativeChild[] {
+function outputNodes(content: unknown, details: FabricDetails, folded: boolean): NativeChild[] {
 	const blocks = Array.isArray(content) ? content : [];
 	const output = blocks
 		.filter(
@@ -426,11 +429,19 @@ function outputNodes(content: unknown, details: FabricDetails): NativeChild[] {
 		const logs = lines.slice(0, valueAt).join("\n").replace(/\n+$/, "");
 		const value = lines.slice(valueAt).join("\n").replace(/\n+$/, "");
 		return [
-			codeSection("logs", "omp-fabric.logs", [span("logs", "muted")], logs, undefined, "Click the code to copy the logs"),
-			valueSection(value, details),
+			codeSection(
+				"logs",
+				"omp-fabric.logs",
+				[span("logs", "muted")],
+				logs,
+				undefined,
+				"Click the code to copy the logs",
+				folded,
+			),
+			valueSection(value, details, folded),
 		];
 	}
-	return [valueSection(output, details)];
+	return [valueSection(output, details, folded)];
 }
 
 function phaseRow(phases: string[]): NativeChild {
@@ -471,7 +482,7 @@ export function describeFabricCall(
 	if (meta !== undefined) body.push(meta);
 	if (display.description !== undefined) body.push(text([span(display.description, "muted")]));
 	if (program !== "") {
-		body.push(programSection(program));
+		body.push(programSection(program, options.expanded !== true));
 	} else if (options.argsComplete === false) {
 		body.push(muted("composing…"));
 	}
@@ -564,7 +575,8 @@ export function describeFabricResult(
 	const body: NativeChild[] = [];
 	const meta = metaLine(options, args, options.isPartial === true);
 	if (meta !== undefined) body.push(meta);
-	if (program !== "") body.push(programSection(program));
+	const folded = options.expanded !== true;
+	if (program !== "") body.push(programSection(program, folded));
 	if (audits.length > 0 || phases.length > 0) body.push(callsSection(audits, phases, options));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
@@ -574,7 +586,7 @@ export function describeFabricResult(
 
 	// No rule nodes: the tool body draws its own hairline wherever the child kind changes
 	// (elements/work.html#tool), so an explicit rule would stack a second line on it.
-	body.push(...outputNodes(result?.content, details));
+	body.push(...outputNodes(result?.content, details, folded));
 	const foot = footLine(failed, options, args);
 	if (foot !== undefined) body.push(foot);
 

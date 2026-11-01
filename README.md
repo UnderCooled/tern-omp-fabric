@@ -54,10 +54,11 @@ Fabric   Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phase
 │ ✓ Done · 2.4s
 ```
 
-The three blocks are foldable sections, not frames: Tern draws exactly one ring per tool call and
-flattens anything framed inside it, so a nested card loses its border *and* its fold
-(`elements/work.html#tool`). The tool body draws a hairline wherever the child kind changes, which
-is where the dividers in that sketch come from.
+The folds come from omp (a `section` per block); the frames come from this plugin's Tern
+stylesheet, not from the node tree: the protocol gives a tool call exactly one ring and flattens
+anything framed inside its body (`elements/work.html#tool`), so a nested `card` loses both its border and
+its fold. `tern/style.css` draws the ring per role instead — `[data-role="omp-fabric.program"]` and its
+siblings — which is the half of this plugin that only Tern can do.
 
 Every fold is the terminal's own state: the section heads unfold and refold independently, and
 `ctrl+o` (`app.tools.expand`) still expands the whole card. The Tern plugin adds a palette row for
@@ -98,9 +99,10 @@ chord; it types `ctrl+o` into the focused omp pane.
   not visible to an extension and the foot line says nothing while the call runs.
 - The directory is the one omp was started in, captured when the extension loads; a program that
   changes its own working directory does not change the line.
-- No block inside a `fabric_exec` card can carry its own frame: the protocol draws one ring per tool
-  call and flattens nested frames by design, so the delimitation is the tool's own hairlines plus
-  the section heads, not borders around each block.
+- No block inside a `fabric_exec` card can carry its own frame from the node tree: the protocol
+  draws one ring per tool call and flattens nested frames by design. The borders in `style.css`
+  are a Tern sheet, so they exist only in Tern, only while this plugin is loaded, and a user CSS
+  theme installed after it can override them.
 
 ## Layout
 
@@ -109,7 +111,8 @@ index.ts          omp extension entry; installs the describe hooks
 src/attach.ts     attaches describeCall/describeResult to fabric's fabric_exec definition
 src/describe.ts   pure: fabric_exec args/details -> Tern nodes (no host imports at run time)
 tests/            bun test over src/describe.ts and the attach seam
-tern/plugin.toml  Tern plugin manifest (id omp-fabric)
+tern/plugin.toml  Tern plugin manifest (id omp-fabric); styles = ["style.css"]
+tern/style.css    the rings, wells and dividers, by node role
 tern/window.luau  the palette row that sends ctrl+o into the focused omp pane
 ```
 

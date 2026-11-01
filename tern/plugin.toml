@@ -2,5 +2,6 @@ schema = 1
 id = "omp-fabric"
 name = "omp fabric"
 version = "0.1.0"
-description = "Tern side of tern-omp-fabric: expands the focused omp pane's tool output (omp's Ctrl+O)."
+description = "Tern side of tern-omp-fabric: frames the fabric_exec blocks and expands the focused omp pane's tool output (omp's Ctrl+O)."
 window = "window.luau"
+styles = ["style.css"]

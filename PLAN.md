@@ -160,6 +160,23 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, fourth pass (the card chevron, and where frames come from)
+
+Two reports: expanding the "Fabric" head changed nothing, and neither the hairline nor any border
+showed. Answer to the second, asked as a question in the same breath: yes, the frames belong to
+Tern, not to the node tree — and until now this plugin shipped no sheet.
+
+| Finding | Change |
+| --- | --- |
+| every block was already folded, so the tool head's own fold had nothing left to hide | `options.expanded` now decides the sections' starting fold: expanding the card opens program, calls, logs and output (`collapsed: options.expanded !== true`). The head chevron finally differs from the collapsed state. |
+| nested frames are flattened by protocol (`tsp.d.ts:722`), so no ring can come from a node | `tern/style.css`, installed by the manifest (`styles = ["style.css"]`, `guides/chrome.html#global-css`): a ring per block role, a hairline per nested call, a code well, and a rule above the foot. Only Tern can draw these; CSS borders and radii are supported (`styles/css.html`). |
+| the tool's own hairline between differing child kinds was invisible | the same sheet styles the code wells and the foot rule; no explicit `rule` nodes (that would stack). |
+
+Verification: `tern plugin reload omp-fabric` exits 0, `tern plugin list` shows `omp-fabric … ready`, and
+`~/AppData/Local/Tern/Logs/tern.log` has the reload line with no `plugin style sheet has errors`. `bun test`
+38 pass / 0 fail, `bun run typecheck` clean. What the rings actually look like is still the one
+thing only a person at the pane can judge.
+
 ## Revision 2026-11-01, third pass (noise and per-call outputs)
 
 Two asks: the three noisy rows a program returns (`ok`/`output`/`details` and friends) should go away or be

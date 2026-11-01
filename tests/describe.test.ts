@@ -128,9 +128,9 @@ describe("describeFabricCall", () => {
 		for (const node of nodes(view.body)) expect(node.k).not.toBe("card");
 	});
 
-	test("the expanded flag does not change the starting fold", () => {
+	test("expanding the card opens the program fold (that is what the head chevron does)", () => {
 		const expanded = unwrap(describeFabricCall(fabricCallArgs, { expanded: true }), "expanded call view");
-		expect(props(unwrap(byKey(expanded.body, "program"), "program section")).collapsed).toBe(true);
+		expect(props(unwrap(byKey(expanded.body, "program"), "program section")).collapsed).toBe(false);
 	});
 
 	test("incomplete args with no code show composing…", () => {
@@ -292,6 +292,13 @@ describe("caps", () => {
 
 	test("expanded: all 12 audit sections", () => {
 		expect(auditSections(render({ cwd: CWD, expanded: true }))).toHaveLength(12);
+	});
+
+	test("expanded opens every block fold so the chevron shows something", () => {
+		const view = render({ cwd: CWD, expanded: true });
+		for (const key of ["program", "calls", "output"]) {
+			expect(props(unwrap(byKey(view.body, key), key + " section")).collapsed).toBe(false);
+		}
 	});
 });
 
