@@ -220,7 +220,8 @@ describe("when a call shows its output", () => {
 		expect(props(output).role).toBe("omp-fabric.output");
 		expect(props(output).collapsible).toBe(true);
 		expect(props(output).collapsed).toBe(true);
-		expect(joined(headSpans(output))).toBe("output · 6 lines");
+		// Named after its call: two output folds side by side must be tellable apart.
+		expect(joined(headSpans(output))).toBe("bash output · 6 lines");
 	});
 
 	test("opening that fold shows the whole output", () => {

@@ -47,9 +47,9 @@ Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases
 │ [discover] [report]                        ← the phases
 │ grep /foo/ in src · 24ms                   ← a fast call: its line is all it needs
 │ build · 5.2s                               ← a slow one gets an output fold
-│ ▸ output · 12 lines
+│ ▸ bash output · 12 lines                   ← named after its call
 │ deploy · failed · 3.1s                     ← a failure always gets one
-│ ▸ output · 3 lines
+│ ▸ deploy output · 3 lines
 ```
 
 Every output in the card is a call's own: `audit.result` from fabric's audit trail, rendered under the
@@ -67,7 +67,7 @@ The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`,
 under) beside the counted facts, so the body has no trailing status line.
 
 Every block is a fold of its own: the program, and the output of any call that took two seconds or
-more or failed. A fold is one row until you open it — `program · 42 lines`, `output · 12 lines` — and
+more or failed. A fold is one row until you open it — `program · 42 lines`, `bash output · 12 lines` — and
 `ctrl+o` (`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
 block its own disclosure: the terminal's "N more lines" button always opens the enclosing one, so
 a block that shows a preview cannot also unfold by itself. The Tern plugin adds a palette row for
@@ -96,7 +96,8 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   output is what the sheet rings.
 - A call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
-  printed JSON otherwise — and it lives in a fold whose head counts its lines.
+  printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12
+  lines`), so a column of folds still says which call each one came from.
 - The program's own returned text is not drawn. fabric hands it over as one blob — its `logs` and
   the returned value joined, with no attribution to a call — which is exactly the merged output
   this card used to show. What a call produced is read from its own audit instead.

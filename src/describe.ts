@@ -216,11 +216,17 @@ function callDuration(audit: FabricAudit): number | undefined {
 	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
 
-/** The call's own line: the tool, its one argument, how long it took. */
-function callHead(audit: FabricAudit): Span[] {
+/** What the call ran, as the head names it: `grep`, `read`, `bash`. */
+function callLabel(audit: FabricAudit): string {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
 	const label = coreToolName(audit) ?? raw;
-	const head: Span[] = [span(label === "" ? "call" : label, "strong")];
+	return label === "" ? "call" : label;
+}
+
+/** The call's own line: the tool, its one argument, how long it took. */
+function callHead(audit: FabricAudit): Span[] {
+	const label = callLabel(audit);
+	const head: Span[] = [span(label, "strong")];
 	const detail = callDetail(audit);
 	if (detail !== undefined) head.push(span(" "), span(detail, "accent"));
 	const took = formatDuration(callDuration(audit));
@@ -247,7 +253,12 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 		k: "section",
 		key: `output:${index}`,
 		p: {
-			head: [span("output", "muted"), span(" · " + countLabel(text.split("\n").length, "line"), "muted")],
+			// Named for its call: a column of bare "output" rows says nothing about
+			// which call each one belongs to.
+			head: [
+				span(callLabel(audit) + " output", "muted"),
+				span(" · " + countLabel(text.split("\n").length, "line"), "muted"),
+			],
 			role: "omp-fabric.output",
 			collapsible: true,
 			collapsed: options.expanded !== true,

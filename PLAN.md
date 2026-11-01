@@ -160,6 +160,12 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, sixteenth pass (output folds are named after their call)
+
+The tree was already per-call; the heads were not: two folds both read `output · N lines`, so a column
+of them says nothing about attribution. `callLabel` now names both the call line and its output fold
+(`bash output · 6 lines`). `bun test` 34 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, fifteenth pass (each block is its own fold)
 
 Option 2 from the exchange: a block that previews cannot unfold alone (the terminal's "N more lines"
