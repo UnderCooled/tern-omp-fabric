@@ -160,6 +160,31 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01 (user review of the first cut)
+
+The first cut was rejected on layout: the head repeated the program, the reachable copy sat in the
+head, nothing was framed, and a settled call said nothing about how it ended.
+
+| Ask | What the view does now |
+| --- | --- |
+| drop `command` from the head | head = title, first code line, display name. No Copy command, no counts. |
+| program block: folded by default, unfold *and* refold, framed, carries Copy | `card` (ring, `collapsible`, `collapsed`, `preview.lines`) over one `code` node; the card head is `TypeScript · N lines`; the code carries `actions.click = "copy"` plus a Copy menu entry, titled "Click the code to copy the program". |
+| call: walltime, timeout, then cwd | one muted `text` line under the head: `1.2s · timeout 30s · <cwd>` (cwd as a `path` span). |
+| result head = call head; counts folded; rule; output folded; rule; foot | `calls` section (collapsed) holds the phase row and the audit sections and its head carries `N calls · k failed · P phases`; `rule`; output `card` (folded, 12 lines); `rule`; foot `✓ Done · 2.4s` / `✗ Failed · 2.4s` / `✗ Cancelled`, or `timeout 30s` while the call is still running. |
+
+Interface changes:
+
+- `DescribeOptions` gained `cwd?: string`. The host sends no directory, so `attach.ts` wraps every hook
+  call with `{ ...options, cwd }`, captured from `process.cwd()` at install (override for tests).
+- `head()` no longer takes options or extra meta; `programNode` became `programCard`/`codeCard`;
+  `RESULT_CODE_LINES` and `RESULT_PROGRAM_LINES` are gone (one fold size, 8 lines).
+
+Verification for this revision: `bun test` 33 pass / 0 fail, `bun run typecheck` clean, and a smoke run
+of `index.ts` through a fake `ExtensionRunner` printed the exact body order the spec asks for
+(`meta, program card, calls section, rule, output card, rule, foot`) with the cwd filled in. The Tern pane
+itself is still unobserved (screen capture is forbidden here): folds, the click-to-copy action on a
+`code` node and the `card`-inside-`tool` frame need one human look.
+
 ## Status — implemented and verified (2026-11-01)
 
 All chunks A–E are written; F and G are done except the one check only a person can make.

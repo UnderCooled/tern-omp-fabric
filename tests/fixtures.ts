@@ -34,6 +34,7 @@ export const OUTPUT_TEXT = [
 
 export const fabricCallArgs: FabricExecArgs = {
 	code: PROGRAM_LINES,
+	timeoutMs: 30_000,
 	display: { name: "Sweep TODOs", description: "Greps src for TODO markers and reports files." },
 };
 

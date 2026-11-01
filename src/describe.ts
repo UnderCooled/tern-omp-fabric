@@ -5,10 +5,12 @@
  * extension's load path stays {this file, attach.ts, the host's own modules}.
  * The type imports are erased for the same reason.
  *
- * Layout mirrors omp's own ANSI card (fabric-exec-tool.ts renderCall/renderResult)
- * at the level of sections, with one deliberate divergence: the program stays in
- * the result card, clamped, because omp's append-only TUI drops it once the result
- * replaces the call frame, leaving the command nowhere to be read.
+ * Layout: the head names the call and nothing else. Under it, the program is a
+ * framed block folded to a few lines whose own head unfolds it and whose code
+ * copies on click; the call names its walltime, timeout and working directory;
+ * the result folds the phases and the nested calls into one section, separates
+ * the parts with rules, and ends on a foot line (done/failed/timed-out and the
+ * settled duration).
  */
 import type { NativeChild } from "@oh-my-pi/pi-tui";
 import type { NativeToolHead, NativeToolView } from "@oh-my-pi/pi-tui/tools";
@@ -61,15 +63,17 @@ export type DescribeOptions = {
 	media?: boolean;
 	elapsedMs?: number;
 	cancelled?: boolean;
+	/** The session's working directory; attach.ts threads it in (the host does not send one). */
+	cwd?: string;
 };
 
-/** Code lines shown while collapsed; an expanded card shows everything, capped as omp caps it. */
-const CALL_CODE_LINES = 8;
-const RESULT_CODE_LINES = 4;
+/** Program lines the folded program card keeps, in the call and in the settled result. */
+const CALL_PROGRAM_LINES = 8;
+/** Lines a block shows once its fold is opened: omp caps a program the same way. */
 const CODE_EXPANDED_LINES = 200;
 /** Lines of one nested call's own output shown while collapsed. */
 const AUDIT_RESULT_LINES = 6;
-/** Lines of the program's return value shown while collapsed. */
+/** Lines of the program's return value the folded output card keeps. */
 const OUTPUT_LINES = 12;
 const AUDITS_COLLAPSED = 8;
 const AUDITS_EXPANDED = 30;
@@ -132,10 +136,12 @@ function runDisplay(value: unknown): { name?: string; description?: string } {
 	return { name, description };
 }
 
-/** `1.2s` / `850ms`, as omp's tool-call timing reads. */
-function formatDuration(ms: number): string | undefined {
-	if (!Number.isFinite(ms) || ms < 0) return undefined;
-	return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+/** `1.2s` / `850ms` / `30s`, as omp's tool-call timing reads. */
+function formatDuration(ms: number | undefined): string | undefined {
+	if (ms === undefined || !Number.isFinite(ms) || ms < 0) return undefined;
+	if (ms < 1000) return `${Math.round(ms)}ms`;
+	const seconds = (ms / 1000).toFixed(1);
+	return `${seconds.endsWith(".0") ? seconds.slice(0, -2) : seconds}s`;
 }
 
 const pathText = (value: unknown): string | undefined =>
@@ -269,6 +275,135 @@ function auditSection(audit: FabricAudit, index: number, options: DescribeOption
 	};
 }
 
+/** Spans of one line: parts joined by a muted middot, absent parts dropped. */
+function joinSpans(parts: Span[][]): Span[] {
+	const out: Span[] = [];
+	for (const part of parts) {
+		if (part.length === 0) continue;
+		if (out.length > 0) out.push(span(" · ", "muted"));
+		out.push(...part);
+	}
+	return out;
+}
+
+/** Walltime, the invocation's timeout and the working directory: the call's own facts. */
+function metaLine(
+	options: DescribeOptions,
+	args: FabricExecArgs | undefined,
+	withWalltime: boolean,
+): NativeChild | undefined {
+	const elapsed = withWalltime ? formatDuration(options.elapsedMs) : undefined;
+	const timeout = formatDuration(args?.timeoutMs);
+	const cwd = typeof options.cwd === "string" && options.cwd.trim() !== "" ? options.cwd.trim() : undefined;
+	const spans = joinSpans([
+		elapsed === undefined ? [] : [span(elapsed, "muted")],
+		timeout === undefined ? [] : [span("timeout " + timeout, "muted")],
+		cwd === undefined ? [] : [span(cwd, "path")],
+	]);
+	return spans.length === 0 ? undefined : { k: "text", key: "meta", p: { spans, role: "omp-fabric.meta" } };
+}
+
+/**
+ * A framed code block: the fold sits on its head, the body opens and closes with
+ * that fold, and a click on the code copies it (Tern's own copy action).
+ * foldLines undefined starts the card open instead.
+ */
+function codeCard(
+	key: string,
+	role: string,
+	label: string,
+	text: string,
+	lang: string | undefined,
+	foldLines: number | undefined,
+	copyTitle: string,
+	start?: number,
+): NativeChild {
+	const lines = text.split("\n").length;
+	return {
+		k: "card",
+		key,
+		p: {
+			role,
+			head: joinSpans([[span(label, "muted")], [span(countLabel(lines, "line"), "muted")]]),
+			collapsible: true,
+			collapsed: foldLines !== undefined,
+			preview: { lines: foldLines ?? CODE_EXPANDED_LINES },
+		},
+		c: [
+			{
+				k: "code",
+				key: key + "-code",
+				p: { text, lang, start, actions: { click: "copy", menu: ["copy"] }, title: copyTitle },
+			},
+		],
+	};
+}
+
+/** The program, folded: unfolded by its head, copied by a click on the code. */
+function programCard(program: string, options: DescribeOptions): NativeChild {
+	return codeCard(
+		"program",
+		"omp-fabric.program",
+		"TypeScript",
+		program,
+		"typescript",
+		options.expanded === true ? undefined : CALL_PROGRAM_LINES,
+		"Click the code to copy the program",
+	);
+}
+
+/** One folded section over the phases and the nested calls. */
+function callsSection(audits: FabricAudit[], phases: string[], options: DescribeOptions): NativeChild {
+	const failed = audits.filter(audit => audit.success === false).length;
+	const head = joinSpans([
+		audits.length === 0 ? [] : [span(countLabel(audits.length, "call"), "strong")],
+		failed === 0 ? [] : [span(failed + " failed", "error")],
+		phases.length === 0 ? [] : [span(countLabel(phases.length, "phase"), "muted")],
+	]);
+	const children: NativeChild[] = [];
+	if (phases.length > 0) children.push(phaseRow(phases));
+	const limit = options.expanded === true ? AUDITS_EXPANDED : AUDITS_COLLAPSED;
+	const shown = audits.slice(0, limit);
+	for (let index = 0; index < shown.length; index += 1) {
+		const audit = shown[index];
+		if (audit !== undefined) children.push(auditSection(audit, index, options));
+	}
+	if (audits.length > shown.length) {
+		children.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));
+	}
+	return {
+		k: "section",
+		key: "calls",
+		p: { head, role: "omp-fabric.calls", collapsible: true, collapsed: true },
+		c: children,
+	};
+}
+
+/** The last line: what happened, then how long the program took. */
+function footLine(
+	failed: boolean,
+	options: DescribeOptions,
+	args: FabricExecArgs | undefined,
+): NativeChild | undefined {
+	const spans: Span[] = [];
+	if (options.cancelled === true) {
+		spans.push(span("✗ Cancelled", "warning strong"));
+	} else if (options.isPartial === true) {
+		const timeout = formatDuration(args?.timeoutMs);
+		if (timeout === undefined) return undefined;
+		spans.push(span("timeout " + timeout, "muted"));
+	} else if (failed) {
+		spans.push(span("✗ Failed", "error strong"));
+	} else {
+		spans.push(span("✓ Done", "success strong"));
+	}
+	if (options.cancelled !== true && options.isPartial !== true) {
+		const elapsed = formatDuration(options.elapsedMs);
+		if (elapsed !== undefined) spans.push(span(" · " + elapsed, "muted"));
+	}
+	return { k: "text", key: "foot", p: { spans, role: "omp-fabric.foot" } };
+}
+
 /** The program's return value as the model read it. */
 function outputNode(content: unknown, details: FabricDetails, options: DescribeOptions): NativeChild | undefined {
 	const blocks = Array.isArray(content) ? content : [];
@@ -283,17 +418,16 @@ function outputNode(content: unknown, details: FabricDetails, options: DescribeO
 		.replace(/\n+$/, "");
 	if (output.trim() === "") return undefined;
 	const start = details.outputFormatStartLine;
-	return {
-		k: "code",
-		key: "output",
-		p: {
-			text: output,
-			lang: details.outputFormat,
-			start: typeof start === "number" && start > 0 ? start : undefined,
-			preview: { lines: options.expanded === true ? CODE_EXPANDED_LINES : OUTPUT_LINES },
-			role: "omp-fabric.output",
-		},
-	};
+	return codeCard(
+		"output",
+		"omp-fabric.output",
+		"output",
+		output,
+		details.outputFormat,
+		options.expanded === true ? undefined : OUTPUT_LINES,
+		"Click the code to copy the output",
+		typeof start === "number" && start > 0 ? start : undefined,
+	);
 }
 
 function phaseRow(phases: string[]): NativeChild {
@@ -305,35 +439,18 @@ function phaseRow(phases: string[]): NativeChild {
 	};
 }
 
-function head(
-	program: string,
-	display: { name?: string; description?: string },
-	options: DescribeOptions,
-	extraMeta: string[],
-): NativeToolHead {
-	const lines = program === "" ? 0 : program.split("\n").length;
+/**
+ * The call's data head: the verb and the program's first line. No Copy command
+ * here — the program block under it carries the copy, so the fact appears once.
+ */
+function head(program: string, display: { name?: string; description?: string }): NativeToolHead {
 	const target = program === "" ? "" : firstLine(program);
-	const meta: string[] = [];
-	if (display.name !== undefined) meta.push(display.name);
-	if (lines > 0) meta.push(`TypeScript · ${countLabel(lines, "line")}`);
-	meta.push(...extraMeta);
 	return {
 		title: "Fabric",
 		target: target === "" ? undefined : target,
 		targetKind: target === "" ? undefined : "command",
 		lang: target === "" ? undefined : "typescript",
-		// The head's Copy command copies the whole program, not the shown first line.
-		command: program === "" ? undefined : program,
-		meta: meta.length > 0 ? meta : undefined,
-		badges: options.isPartial === true ? [{ text: "running", tone: "accent" }] : undefined,
-	};
-}
-
-function programNode(program: string, lines: number): NativeChild {
-	return {
-		k: "code",
-		key: "program",
-		p: { text: program, lang: "typescript", preview: { lines }, role: "omp-fabric.program" },
+		meta: display.name === undefined ? undefined : [display.name],
 	};
 }
 
@@ -345,13 +462,15 @@ export function describeFabricCall(
 	const program = programText(args);
 	const display = runDisplay(args?.display);
 	const body: NativeChild[] = [];
+	const meta = metaLine(options, args, true);
+	if (meta !== undefined) body.push(meta);
 	if (display.description !== undefined) body.push(text([span(display.description, "muted")]));
 	if (program !== "") {
-		body.push(programNode(program, options.expanded === true ? CODE_EXPANDED_LINES : CALL_CODE_LINES));
+		body.push(programCard(program, options));
 	} else if (options.argsComplete === false) {
 		body.push(muted("composing…"));
 	}
-	return { tool: head(program, display, options, []), body, preview: "children" };
+	return { tool: head(program, display), body, preview: "children" };
 }
 
 function readAudit(value: unknown): FabricAudit | undefined {
@@ -429,36 +548,28 @@ export function describeFabricResult(
 	const display = runDisplay(args?.display);
 	const audits = details.audits ?? [];
 	const phases = details.phases ?? [];
-	const failed = audits.filter(audit => audit.success === false).length;
-
-	const extraMeta: string[] = [];
-	if (audits.length > 0) extraMeta.push(countLabel(audits.length, "call"));
-	if (failed > 0) extraMeta.push(`${failed} failed`);
-	if (phases.length > 0) extraMeta.push(countLabel(phases.length, "phase"));
+	const failed = result?.isError === true || details.success === false;
 
 	const body: NativeChild[] = [];
-	if (program !== "") {
-		body.push(programNode(program, options.expanded === true ? CODE_EXPANDED_LINES : RESULT_CODE_LINES));
-	}
-	if (phases.length > 0) body.push(phaseRow(phases));
+	const meta = metaLine(options, args, options.isPartial === true);
+	if (meta !== undefined) body.push(meta);
+	if (program !== "") body.push(programCard(program, options));
+	if (audits.length > 0 || phases.length > 0) body.push(callsSection(audits, phases, options));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
 	} else if (audits.length === 0 && details.progress !== undefined) {
 		body.push(muted(details.progress));
 	}
 
-	const limit = options.expanded === true ? AUDITS_EXPANDED : AUDITS_COLLAPSED;
-	const shown = audits.slice(0, limit);
-	for (let index = 0; index < shown.length; index += 1) {
-		const audit = shown[index];
-		if (audit !== undefined) body.push(auditSection(audit, index, options));
-	}
-	if (audits.length > shown.length) {
-		body.push(muted(`… ${countLabel(audits.length - shown.length, "call")} more`));
-	}
-
 	const output = outputNode(result?.content, details, options);
-	if (output !== undefined) body.push(output);
+	if (output !== undefined) {
+		body.push({ k: "rule", key: "rule-calls" });
+		body.push(output);
+	}
+	body.push({ k: "rule", key: "rule-foot" });
+	const foot = footLine(failed, options, args);
+	if (foot !== undefined) body.push(foot);
 
-	return { tool: head(program, display, options, extraMeta), body, preview: "children" };
+	return { tool: head(program, display), body, preview: "children" };
 }
+
