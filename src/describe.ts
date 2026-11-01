@@ -261,10 +261,11 @@ function auditSection(audit: FabricAudit, index: number, options: DescribeOption
 		children.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
 	}
 	if (audit.resultTruncated === true) children.push(muted("truncated"));
+	// Folded: a nested call keeps its arguments and output behind its own head until opened.
 	return {
 		k: "section",
 		key: `call:${index}:${audit.ref}`,
-		p: { head, role: "omp-fabric.call" },
+		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: true },
 		c: children,
 	};
 }
@@ -385,8 +386,26 @@ function footLine(
 	return { k: "text", key: "foot", p: { spans, role: "omp-fabric.foot" } };
 }
 
-/** The program's return value as the model read it. */
-function outputNode(content: unknown, details: FabricDetails, options: DescribeOptions): NativeChild | undefined {
+/** The return value in its own fold. */
+function valueSection(text: string, details: FabricDetails): NativeChild {
+	const lines = text.split("\n").length;
+	return codeSection(
+		"output",
+		"omp-fabric.output",
+		joinSpans([[span("output", "muted")], [span(countLabel(lines, "line"), "muted")]]),
+		text,
+		details.outputFormat,
+		"Click the code to copy the output",
+	);
+}
+
+/**
+ * The program's result as the model read it. fabric joins the program's logs and
+ * the returned value into one text and says where the value starts
+ * (outputFormatStartLine); splitting them keeps two different things out of one
+ * block, and each lands in its own fold.
+ */
+function outputNodes(content: unknown, details: FabricDetails): NativeChild[] {
 	const blocks = Array.isArray(content) ? content : [];
 	const output = blocks
 		.filter(
@@ -397,18 +416,21 @@ function outputNode(content: unknown, details: FabricDetails, options: DescribeO
 		.join("\n")
 		.replace(/\r\n?/g, "\n")
 		.replace(/\n+$/, "");
-	if (output.trim() === "") return undefined;
-	const start = details.outputFormatStartLine;
-	const lines = output.split("\n").length;
-	return codeSection(
-		"output",
-		"omp-fabric.output",
-		joinSpans([[span("output", "muted")], [span(countLabel(lines, "line"), "muted")]]),
-		output,
-		details.outputFormat,
-		"Click the code to copy the output",
-		typeof start === "number" && start > 0 ? start : undefined,
-	);
+	if (output.trim() === "") return [];
+	const lines = output.split("\n");
+	const valueAt =
+		typeof details.outputFormatStartLine === "number" && details.outputFormatStartLine > 0
+			? details.outputFormatStartLine
+			: 0;
+	if (valueAt > 0 && valueAt < lines.length) {
+		const logs = lines.slice(0, valueAt).join("\n").replace(/\n+$/, "");
+		const value = lines.slice(valueAt).join("\n").replace(/\n+$/, "");
+		return [
+			codeSection("logs", "omp-fabric.logs", [span("logs", "muted")], logs, undefined, "Click the code to copy the logs"),
+			valueSection(value, details),
+		];
+	}
+	return [valueSection(output, details)];
 }
 
 function phaseRow(phases: string[]): NativeChild {
@@ -552,8 +574,7 @@ export function describeFabricResult(
 
 	// No rule nodes: the tool body draws its own hairline wherever the child kind changes
 	// (elements/work.html#tool), so an explicit rule would stack a second line on it.
-	const output = outputNode(result?.content, details, options);
-	if (output !== undefined) body.push(output);
+	body.push(...outputNodes(result?.content, details));
 	const foot = footLine(failed, options, args);
 	if (foot !== undefined) body.push(foot);
 

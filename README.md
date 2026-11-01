@@ -45,14 +45,12 @@ Fabric   Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phase
 │ 1.2s · timeout 30s · D:/repos/demo                 ← walltime, timeout, working directory
 │ (the model's description, when it sent one)
 │ ▸ program                                           ← folded: its head unfolds, click copies
-│ ▸ calls                                             ← folded: phases, then one section per call
+│ ▸ calls                                  ← folded: phases, then one row per call
 │     [discover] [report]
-│     grep  /foo/ in src · 24ms
-│       pattern foo
-│       … (its own output, 6 lines folded)
-│     mcp.do_thing  deploy · failed · 3.1s
-│       (error) connection refused
-│ ▸ output · 12 lines                                 ← the program's return value, folded
+│     ▸ grep  /foo/ in src · 24ms           ← that call's own args and output, behind its head
+│     ▸ mcp.do_thing  deploy · failed · 3.1s
+│ ▸ logs                                    ← what the program printed, folded on its own
+│ ▸ output · 12 lines                       ← the value it returned, a separate fold
 │ ✓ Done · 2.4s
 ```
 
@@ -80,6 +78,10 @@ chord; it types `ctrl+o` into the focused omp pane.
   the session's working directory.
 - The foot line says how the program ended and how long it took (`✓ Done · 2.4s`, `✗ Failed`,
   `✗ Cancelled`), and says `timeout 30s` instead while the call has not returned.
+- Each nested call is its own fold: arguments and output stay behind that call's head, so two
+  calls never share one body, and the head row alone is what a settled card shows.
+- The program's own result is two folds, not one block: `logs` (what it printed) and `output` (the
+  value it returned), split where fabric marks the value's first line (`outputFormatStartLine`).
 
 ## Limits
 

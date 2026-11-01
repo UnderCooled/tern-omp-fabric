@@ -158,8 +158,8 @@ describe("describeFabricResult", () => {
 		expect(head.meta).toEqual(["Sweep TODOs", "TypeScript · 12 lines", "3 calls", "1 failed", "2 phases"]);
 	});
 
-	test("body order: meta, program, calls, output, foot (the tool draws its own separators)", () => {
-		expect(kindList(view.body)).toEqual(["text", "section", "section", "section", "text"]);
+	test("body order: meta, program, calls, logs, output, foot (the tool draws its own separators)", () => {
+		expect(kindList(view.body)).toEqual(["text", "section", "section", "section", "section", "text"]);
 	});
 
 	test("a settled result drops the walltime from the meta line", () => {
@@ -334,24 +334,52 @@ describe("trace-only details", () => {
 	});
 });
 
-describe("output section", () => {
+describe("result blocks", () => {
 	const view = unwrap(describeFabricResult(fabricResult, options, fabricCallArgs), "result view");
+	const logs = unwrap(byKey(view.body, "logs"), "logs section");
 	const section = unwrap(byKey(view.body, "output"), "output section");
 
-	test("is a section that starts folded, labelled with its line count", () => {
+	test("the program's logs and its return value are two folds, not one block", () => {
+		expect(props(logs).role).toBe("omp-fabric.logs");
+		expect(props(logs).collapsed).toBe(true);
+		expect(joined(headSpans(logs))).toBe("logs");
+		expect(props(codeOf(logs)).text).toBe("scanned: 3\ntodos:\n  - src/a.ts");
+		expect(props(codeOf(logs)).lang).toBeUndefined();
+	});
+
+	test("the value fold starts where fabric says the formatted value begins", () => {
 		expect(section.k).toBe("section");
 		expect(props(section).role).toBe("omp-fabric.output");
 		expect(props(section).collapsible).toBe(true);
 		expect(props(section).collapsed).toBe(true);
-		expect(joined(headSpans(section))).toBe("output · 12 lines");
+		expect(joined(headSpans(section))).toBe("output · 9 lines");
+		const code = codeOf(section);
+		expect(props(code).text).toBe(OUTPUT_TEXT.split("\n").slice(3).join("\n"));
+		expect(props(code).lang).toBe("yaml");
 	});
 
-	test("its code keeps the joined text, the language, the start line, and copies on click", () => {
+	test("the value copies on click", () => {
 		const code = codeOf(section);
-		expect(props(code).text).toBe(OUTPUT_TEXT);
-		expect(props(code).lang).toBe("yaml");
-		expect(props(code).start).toBe(3);
 		expect(actionOf(code).click).toBe("copy");
 		expect(props(code).title).toBe("Click the code to copy the output");
+	});
+
+	test("without a value offset the whole result stays one fold", () => {
+		const single = unwrap(
+			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }], details: { audits: [] } }, options, fabricCallArgs),
+			"single-fold view",
+		);
+		expect(byKey(single.body, "logs")).toBeUndefined();
+		expect(props(codeOf(unwrap(byKey(single.body, "output"), "output section"))).text).toBe(OUTPUT_TEXT);
+	});
+});
+
+describe("audit sections fold", () => {
+	test("a nested call hides its arguments and output until opened", () => {
+		const view = unwrap(describeFabricResult(fabricResult, options, fabricCallArgs), "result view");
+		for (const section of auditSections(view)) {
+			expect(props(section).collapsible).toBe(true);
+			expect(props(section).collapsed).toBe(true);
+		}
 	});
 });

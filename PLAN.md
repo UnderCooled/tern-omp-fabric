@@ -160,6 +160,23 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, third pass (noise and per-call outputs)
+
+Two asks: the three noisy rows a program returns (`ok`/`output`/`details` and friends) should go away or be
+folded whole, and with several calls nothing should put two outputs in one block.
+
+| Change | Why |
+| --- | --- |
+| every audit section is now `collapsible + collapsed` | a settled card shows one row per nested call; its arguments and its own output open on demand. |
+| the program's result splits into `logs` and `output` | fabric joins the program's `logs` and the returned value into one text block and names the value's first line (`index.js:3661-3692`, `outputFormatStartLine`). Two different things no longer share a block, and each folds. |
+| no `preview` left on the split value | the fold is the clamp; `code`'s own preview would double it. |
+
+Body now: `meta, program, calls, logs, output, foot` (sections except the two texts). `outputNodes` returns an
+array and keeps the single-block path when there is no value offset.
+
+Verification: `bun test` 37 pass / 0 fail, `bun run typecheck` clean, smoke over `index.ts` prints the five
+sections folded with `logs` and `output` separate. Not observed in a live Tern pane.
+
 ## Revision 2026-11-01, second pass (what Tern actually draws)
 
 The framed cards did nothing in the terminal: `TspToolProps` (pi-wire `tsp.d.ts:720-724`) has the
