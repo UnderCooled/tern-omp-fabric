@@ -96,6 +96,29 @@ export const traceOnlyDetails = {
 	},
 };
 
+/** An edit call: the result envelope an `omp.edit` returns, diff and all. */
+export const editAudit: FabricAudit = {
+	ref: "omp.edit",
+	tool: "edit",
+	provider: "omp",
+	success: true,
+	args: { path: "src/a.ts", old_string: "beta", new_string: "BETA" },
+	result: {
+		ok: true,
+		output: "[src/a.ts]\n1:alpha\n2:BETA\n3:gamma\n",
+		details: {
+			op: "update",
+			path: "src/a.ts",
+			firstChangedLine: 2,
+			diff: " 1|alpha\n-2|beta\n+2|BETA\n 3|gamma",
+			oldText: "alpha\nbeta\ngamma\n",
+			newText: "alpha\nBETA\ngamma\n",
+		},
+	},
+	startedAt: 0,
+	endedAt: 300,
+};
+
 /** A call slow enough that its output is worth showing without a click. */
 export const slowAudit: FabricAudit = {
 	ref: "omp.bash",

@@ -160,6 +160,19 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, nineteenth pass (edits render as diffs)
+
+An `omp.edit` result is `{ ok, output, details }`: `output` is the post-edit excerpt with line numbers,
+and the real change is `details.diff`, written `<marker><line>|text`. We were showing `output`, i.e. only
+what the file looks like after the replace.
+
+`editDiff` + `parseOmpDiff` turn that into hunks for Tern's `diff` kind (`mode: "unified"`, `path` for the
+grammar): markers are kept, and a gap in a side's numbering starts a new hunk so a multi-edit diff
+stays right. A diff with no changed line falls back to the text path. Result nodes carry roles
+`omp-fabric.output-diff` / `omp-fabric.output-text`.
+
+`bun test` 38 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, eighteenth pass (slow calls open their own output fold)
 
 `SLOW_CALL_MS` is back, used only for the starting state: `collapsed: options.expanded !== true &&

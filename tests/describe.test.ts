@@ -10,7 +10,16 @@ import {
 	type FabricAudit,
 	type FabricDetails,
 } from "../src/describe";
-import { fabricCallArgs, fabricDetails, fabricResult, fromTraceAudit, OUTPUT_TEXT, slowAudit, traceOnlyDetails } from "./fixtures";
+import {
+	editAudit,
+	fabricCallArgs,
+	fabricDetails,
+	fabricResult,
+	fromTraceAudit,
+	OUTPUT_TEXT,
+	slowAudit,
+	traceOnlyDetails,
+} from "./fixtures";
 
 type Span = { t: string; s?: string };
 
@@ -292,6 +301,67 @@ describe("how a call's output is drawn", () => {
 			endedAt: 5000,
 		});
 		expect(text).toBe("src/a.ts\nsrc/b.ts");
+	});
+});
+
+describe("an edit answers with a diff", () => {
+	function editOutput(opts: DescribeOptions = options): NativeNode {
+		const view = unwrap(
+			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [editAudit] } }, opts, fabricCallArgs),
+			"edit view",
+		);
+		return unwrap(byKey(view.body, "output:0"), "output fold");
+	}
+
+	test("the diff is handed to Tern's diff kind, not printed as text", () => {
+		const fold = editOutput();
+		expect(byKind(fold.c, "ansi")).toBeUndefined();
+		const diff = unwrap(byKind(fold.c, "diff"), "diff node");
+		expect(props(diff).mode).toBe("unified");
+		expect(props(diff).path).toBe("src/a.ts");
+		const hunks = props(diff).hunks as { oldStart: number; newStart: number; lines: string[] }[];
+		expect(hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
+	});
+
+	test("its head counts the diff's lines", () => {
+		expect(joined(headSpans(editOutput()))).toBe("edit output · 4 lines");
+	});
+
+	test("a gap in the numbering starts a second hunk", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						audits: [
+							{
+								...editAudit,
+								result: { details: { diff: " 1|a\n-2|b\n+2|B\n 9|z\n-10|y\n+10|Y" } },
+							},
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"two-hunk view",
+		);
+		const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff node");
+		const hunks = props(diff).hunks as { oldStart: number; newStart: number; lines: string[] }[];
+		expect(hunks.map(hunk => hunk.oldStart)).toEqual([1, 9]);
+		expect(hunks[1]?.lines).toEqual([" z", "-y", "+Y"]);
+	});
+
+	test("a diff with no changed line falls back to the text", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{ content: [], details: { audits: [{ ...editAudit, result: { details: { diff: " 1|a\n 2|b" } } }] } },
+				options,
+				fabricCallArgs,
+			),
+			"unchanged view",
+		);
+		expect(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff")).toBeUndefined();
 	});
 });
 

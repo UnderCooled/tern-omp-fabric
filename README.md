@@ -97,7 +97,10 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   gets one: the row costs a line, and a gap in the column reads as output that went missing. A call
   that took two seconds or more opens its fold by itself, so a slow step shows what it produced
   without a click. Two calls never share a body, and the output is what the sheet rings.
-- A call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
+- An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed
+  into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
+  rendering instead of a monospaced paste of the post-edit excerpt.
+- Any other call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
   printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12
   lines`), so a column of folds still says which call each one came from.

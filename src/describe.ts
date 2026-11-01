@@ -220,6 +220,54 @@ function slowCall(audit: FabricAudit): boolean {
 	return (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
 }
 
+/** One hunk as Tern's `diff` kind takes it: the two start numbers and the marked lines. */
+type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
+
+/**
+ * omp's edit diff as hunks: ` 1|alpha`, `-2|beta`, `+2|BETA`, one line per row,
+ * marker first and the line number after it. A gap in a side's numbering starts a
+ * new hunk, which is how a multi-edit diff stays correct.
+ */
+function parseOmpDiff(raw: string): DiffHunk[] | undefined {
+	const hunks: DiffHunk[] = [];
+	let current: DiffHunk | undefined;
+	let oldNext = 0;
+	let newNext = 0;
+	for (const row of raw.replace(/\r\n?/g, "\n").split("\n")) {
+		const match = /^([ +-])(\d+)\|(.*)$/.exec(row);
+		if (match === null) {
+			current = undefined;
+			continue;
+		}
+		const mark = match[1] ?? " ";
+		const num = Number(match[2]);
+		const text = match[3] ?? "";
+		const expected = mark === "+" ? newNext : oldNext;
+		if (current === undefined || num !== expected) {
+			current = { oldStart: num, newStart: num, lines: [] };
+			hunks.push(current);
+			oldNext = num;
+			newNext = num;
+		}
+		current.lines.push(mark === " " ? " " + text : mark + text);
+		if (mark !== "+") oldNext = num + 1;
+		if (mark !== "-") newNext = num + 1;
+	}
+	const changed = hunks.filter(hunk => hunk.lines.some(line => line.startsWith("+") || line.startsWith("-")));
+	return changed.length === 0 ? undefined : changed;
+}
+
+/** The diff an edit answered with: `details.diff` of its result envelope. */
+function editDiff(result: unknown): { hunks: DiffHunk[]; path?: string } | undefined {
+	if (!isRecord(result) || !isRecord(result.details)) return undefined;
+	const raw = result.details.diff;
+	if (typeof raw !== "string") return undefined;
+	const hunks = parseOmpDiff(raw);
+	if (hunks === undefined) return undefined;
+	const path = typeof result.details.path === "string" ? result.details.path : undefined;
+	return path === undefined ? { hunks } : { hunks, path };
+}
+
 /** What the call ran, as the head names it: `grep`, `read`, `bash`. */
 function callLabel(audit: FabricAudit): string {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
@@ -250,24 +298,38 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
 	}
-	const text = resultText(result);
-	if (text === undefined) return muted("result not shown");
-	if (text.trim() === "") return undefined;
+	// An edit answers with a diff: Tern draws that as a diff, not as a block of text.
+	const diff = editDiff(result);
+	const text = diff === undefined ? resultText(result) : undefined;
+	if (diff === undefined && text === undefined) return muted("result not shown");
+	if (text !== undefined && text.trim() === "") return undefined;
+	const lines =
+		diff === undefined ? (text ?? "").split("\n").length : diff.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
 	return {
 		k: "section",
 		key: `output:${index}`,
 		p: {
 			// Named for its call: a column of bare "output" rows says nothing about
 			// which call each one belongs to.
-			head: [
-				span(callLabel(audit) + " output", "muted"),
-				span(" · " + countLabel(text.split("\n").length, "line"), "muted"),
-			],
+			head: [span(callLabel(audit) + " output", "muted"), span(" · " + countLabel(lines, "line"), "muted")],
 			role: "omp-fabric.output",
 			collapsible: true,
 			collapsed: options.expanded !== true && !slowCall(audit),
 		},
-		c: [{ k: "ansi", key: `output:${index}:text`, p: { text, role: "omp-fabric.output-text" } }],
+		c: [
+			diff === undefined
+				? { k: "ansi", key: `output:${index}:text`, p: { text: text ?? "", role: "omp-fabric.output-text" } }
+				: {
+						k: "diff",
+						key: `output:${index}:diff`,
+						p: {
+							hunks: diff.hunks,
+							path: diff.path,
+							mode: "unified" as const,
+							role: "omp-fabric.output-diff",
+						},
+					},
+		],
 	};
 }
 
