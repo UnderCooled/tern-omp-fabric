@@ -211,26 +211,36 @@ function resultText(result: unknown): string | undefined {
 	return jsonSafe(result);
 }
 
-/**
- * One call's output, as output rather than as data. The role is what the
- * stylesheet rings.
- */
-function resultNode(audit: FabricAudit): NativeChild | undefined {
-	const result = audit.result;
-	if (result === undefined || result === null) {
-		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
-	}
-	const text = resultText(result);
-	if (text === undefined) return muted("result not shown");
-	if (text.trim() === "") return undefined;
-	return {
-		k: "ansi",
-		key: "output",
-		p: { text, preview: { lines: OUTPUT_PREVIEW_LINES }, role: "omp-fabric.output" },
-	};
+/** A call whose output is worth showing unfolded: two seconds is where a wait becomes a fact. */
+const SLOW_CALL_MS = 2000;
+
+function callDuration(audit: FabricAudit): number | undefined {
+	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
 
-function auditSection(audit: FabricAudit, index: number): NativeChild {
+/**
+ * One call's output, as output rather than as data. The role is what the
+ * stylesheet rings. `lines` clamps it here rather than through `preview`,
+ * because a preview gives way inside an open section and this clamp must hold.
+ */
+function resultNodes(audit: FabricAudit, lines: number): NativeChild[] {
+	const result = audit.result;
+	if (result === undefined || result === null) {
+		return audit.fromTrace === true ? [muted("result not retained after reload")] : [];
+	}
+	const text = resultText(result);
+	if (text === undefined) return [muted("result not shown")];
+	if (text.trim() === "") return [];
+	const all = text.split("\n");
+	const shown = all.length <= lines ? text : all.slice(0, lines).join("\n");
+	const nodes: NativeChild[] = [
+		{ k: "ansi", key: "output", p: { text: shown, role: "omp-fabric.output" } },
+	];
+	if (all.length > lines) nodes.push(muted("… " + countLabel(all.length - lines, "line") + " more"));
+	return nodes;
+}
+
+function auditSection(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
 	const label = coreToolName(audit) ?? raw;
 	const head: Span[] = [span(label === "" ? "call" : label, "strong")];
@@ -242,19 +252,21 @@ function auditSection(audit: FabricAudit, index: number): NativeChild {
 	}
 	if (audit.success === false) head.push(span(" · failed", "error"));
 
-	const children: NativeChild[] = [];
-	const body = resultNode(audit);
-	if (body !== undefined) children.push(body);
-	if (audit.success === false && audit.error) {
+	// A fast call keeps its output folded; one that made the user wait two seconds
+	// or more shows its first four lines without being asked, and a failure always
+	// shows. The card's own expand opens every one of them whole.
+	const expanded = options.expanded === true;
+	const slow = (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
+	const failed = audit.success === false;
+	const children: NativeChild[] = resultNodes(audit, expanded ? Number.POSITIVE_INFINITY : OUTPUT_PREVIEW_LINES);
+	if (failed && audit.error) {
 		children.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
 	}
 	if (audit.resultTruncated === true) children.push(muted("truncated"));
-	// The call's own output is the only output. The head names the call and folds
-	// it away when a program made many of them; the arguments stay out of the way.
 	return {
 		k: "section",
 		key: `call:${index}:${audit.ref}`,
-		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: false },
+		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: !(expanded || slow || failed) },
 		c: children,
 	};
 }
@@ -325,7 +337,7 @@ function callsSection(audits: FabricAudit[], phases: string[], options: Describe
 	const shown = audits.slice(0, limit);
 	for (let index = 0; index < shown.length; index += 1) {
 		const audit = shown[index];
-		if (audit !== undefined) children.push(auditSection(audit, index));
+		if (audit !== undefined) children.push(auditSection(audit, index, options));
 	}
 	if (audits.length > shown.length) {
 		children.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));

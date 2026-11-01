@@ -160,6 +160,17 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, eleventh pass (output folded unless the call was slow)
+
+`resultNode` became `resultNodes(audit, lines)`: it clamps the text itself (a `code`/`ansi` `preview`
+gives way inside an open section, so the clamp could not be left to the terminal) and adds a muted
+`… N lines more` when it hid any. `auditSection` now decides `collapsed`: open when the card is expanded
+(`Number.POSITIVE_INFINITY` lines, no clamp), or when `endedAt - startedAt >= SLOW_CALL_MS (2000)`, or when
+the call failed; folded otherwise. `slowAudit` fixture added.
+
+`bun test` 34 pass / 0 fail, `bun run typecheck` clean; smoke prints folded `[a\nb]` for a 24 ms call and
+open `1\n2\n3\n4` + `… 1 line more` for a 5.2 s one, all six lines with `expanded: true`.
+
 ## Revision 2026-11-01, tenth pass (folded previews are four lines)
 
 `PROGRAM_PREVIEW_LINES` 8 -> 4 and the output clamp (`AUDIT_RESULT_LINES`), renamed `OUTPUT_PREVIEW_LINES`, 6 -> 4.

@@ -10,7 +10,7 @@ import {
 	type FabricAudit,
 	type FabricDetails,
 } from "../src/describe";
-import { fabricCallArgs, fabricDetails, fabricResult, fromTraceAudit, OUTPUT_TEXT, traceOnlyDetails } from "./fixtures";
+import { fabricCallArgs, fabricDetails, fabricResult, fromTraceAudit, OUTPUT_TEXT, slowAudit, traceOnlyDetails } from "./fixtures";
 
 type Span = { t: string; s?: string };
 
@@ -174,11 +174,11 @@ describe("describeFabricResult", () => {
 		expect(props(unwrap(byKind(calls.c, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
-	test("a nested call is open, and its body is only its output", () => {
+	test("a fast call starts folded, with only its own output inside", () => {
 		const section = unwrap(auditSections(view)[0], "first audit section");
 		expect(props(section).role).toBe("omp-fabric.call");
 		expect(props(section).collapsible).toBe(true);
-		expect(props(section).collapsed).toBe(false);
+		expect(props(section).collapsed).toBe(true);
 		expect(kindList(section.c)).toEqual(["ansi"]);
 		expect(section.key).toBe("call:0:omp.grep");
 		const head = headSpans(section);
@@ -225,9 +225,36 @@ describe("per-call rendering", () => {
 		return unwrap(auditSections(view)[0], "audit section");
 	}
 
-	test("an output is clamped to 4 lines until the card expands", () => {
-		const ansi = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
-		expect(previewLines(ansi)).toBe(4);
+	test("a slow call shows its first four lines and says how many it hid", () => {
+		const section = auditSection(slowAudit);
+		expect(props(section).collapsed).toBe(false);
+		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
+		expect(props(ansi).text).toBe("line 1\nline 2\nline 3\nline 4");
+		const more = unwrap(
+			nodes(section.c).find(node => joined(textSpans(node)).includes("more")),
+			"the more line",
+		);
+		expect(textSpans(more)[0]?.s).toBe("muted");
+		expect(joined(textSpans(more))).toBe("… 2 lines more");
+	});
+
+	test("a fast call hides its output but still carries it", () => {
+		const section = auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit"));
+		expect(props(section).collapsed).toBe(true);
+		expect(nodes(section.c).some(node => node.k === "ansi")).toBe(true);
+	});
+
+	test("expanding the card opens every call and drops the clamp", () => {
+		const section = auditSection(slowAudit, { expanded: true });
+		expect(props(section).collapsed).toBe(false);
+		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
+		expect(String(props(ansi).text).split("\n")).toHaveLength(6);
+		expect(nodes(section.c).some(node => joined(textSpans(node)).includes("more"))).toBe(false);
+	});
+
+	test("a failure opens even when it was fast", () => {
+		const section = auditSection(unwrap(auditsOf(fabricDetails)[2], "failing audit"));
+		expect(props(section).collapsed).toBe(false);
 	});
 
 	test("a structured result is drawn as terminal text, not highlighted JSON", () => {
@@ -237,7 +264,6 @@ describe("per-call rendering", () => {
 		expect(byKind(section.c, "code")).toBeUndefined();
 		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
 		expect(props(ansi).text).toContain('"lines": 40');
-		expect(previewLines(ansi)).toBe(4);
 	});
 
 	test("an envelope result shows only its output field", () => {

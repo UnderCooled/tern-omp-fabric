@@ -96,6 +96,18 @@ export const traceOnlyDetails = {
 	},
 };
 
+/** A call slow enough that its output is worth showing without a click. */
+export const slowAudit: FabricAudit = {
+	ref: "omp.bash",
+	tool: "bash",
+	provider: "omp",
+	success: true,
+	args: { command: "bun run build" },
+	result: ["line 1", "line 2", "line 3", "line 4", "line 5", "line 6"].join("\n"),
+	startedAt: 0,
+	endedAt: 5200,
+};
+
 /** A trace-only audit: the result did not survive the reload. */
 export const fromTraceAudit: FabricAudit = {
 	ref: "omp.grep",
