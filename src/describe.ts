@@ -67,14 +67,8 @@ export type DescribeOptions = {
 	cwd?: string;
 };
 
-/** Program lines the folded program card keeps, in the call and in the settled result. */
-const CALL_PROGRAM_LINES = 8;
-/** Lines a block shows once its fold is opened: omp caps a program the same way. */
-const CODE_EXPANDED_LINES = 200;
 /** Lines of one nested call's own output shown while collapsed. */
 const AUDIT_RESULT_LINES = 6;
-/** Lines of the program's return value the folded output card keeps. */
-const OUTPUT_LINES = 12;
 const AUDITS_COLLAPSED = 8;
 const AUDITS_EXPANDED = 30;
 const ARG_ENTRIES = 6;
@@ -304,31 +298,24 @@ function metaLine(
 }
 
 /**
- * A framed code block: the fold sits on its head, the body opens and closes with
- * that fold, and a click on the code copies it (Tern's own copy action).
- * foldLines undefined starts the card open instead.
+ * A folded code block. It is a section, not a card: Tern draws one frame per
+ * tool call and flattens nested cards into borderless sections, so a nested
+ * card loses both its ring and its fold (tsp.d.ts, TspToolProps).
+ * The fold sits on the head, and a click on the code copies it.
  */
-function codeCard(
+function codeSection(
 	key: string,
 	role: string,
-	label: string,
+	head: Span[],
 	text: string,
 	lang: string | undefined,
-	foldLines: number | undefined,
 	copyTitle: string,
 	start?: number,
 ): NativeChild {
-	const lines = text.split("\n").length;
 	return {
-		k: "card",
+		k: "section",
 		key,
-		p: {
-			role,
-			head: joinSpans([[span(label, "muted")], [span(countLabel(lines, "line"), "muted")]]),
-			collapsible: true,
-			collapsed: foldLines !== undefined,
-			preview: { lines: foldLines ?? CODE_EXPANDED_LINES },
-		},
+		p: { role, head, collapsible: true, collapsed: true },
 		c: [
 			{
 				k: "code",
@@ -340,26 +327,20 @@ function codeCard(
 }
 
 /** The program, folded: unfolded by its head, copied by a click on the code. */
-function programCard(program: string, options: DescribeOptions): NativeChild {
-	return codeCard(
+function programSection(program: string): NativeChild {
+	return codeSection(
 		"program",
 		"omp-fabric.program",
-		"TypeScript",
+		[span("program", "muted")],
 		program,
 		"typescript",
-		options.expanded === true ? undefined : CALL_PROGRAM_LINES,
 		"Click the code to copy the program",
 	);
 }
 
-/** One folded section over the phases and the nested calls. */
+/** One folded section over the phases and the nested calls (the counts sit in the head). */
 function callsSection(audits: FabricAudit[], phases: string[], options: DescribeOptions): NativeChild {
-	const failed = audits.filter(audit => audit.success === false).length;
-	const head = joinSpans([
-		audits.length === 0 ? [] : [span(countLabel(audits.length, "call"), "strong")],
-		failed === 0 ? [] : [span(failed + " failed", "error")],
-		phases.length === 0 ? [] : [span(countLabel(phases.length, "phase"), "muted")],
-	]);
+	const label = audits.length > 0 ? "calls" : "phases";
 	const children: NativeChild[] = [];
 	if (phases.length > 0) children.push(phaseRow(phases));
 	const limit = options.expanded === true ? AUDITS_EXPANDED : AUDITS_COLLAPSED;
@@ -374,7 +355,7 @@ function callsSection(audits: FabricAudit[], phases: string[], options: Describe
 	return {
 		k: "section",
 		key: "calls",
-		p: { head, role: "omp-fabric.calls", collapsible: true, collapsed: true },
+		p: { head: [span(label, "muted")], role: "omp-fabric.calls", collapsible: true, collapsed: true },
 		c: children,
 	};
 }
@@ -418,13 +399,13 @@ function outputNode(content: unknown, details: FabricDetails, options: DescribeO
 		.replace(/\n+$/, "");
 	if (output.trim() === "") return undefined;
 	const start = details.outputFormatStartLine;
-	return codeCard(
+	const lines = output.split("\n").length;
+	return codeSection(
 		"output",
 		"omp-fabric.output",
-		"output",
+		joinSpans([[span("output", "muted")], [span(countLabel(lines, "line"), "muted")]]),
 		output,
 		details.outputFormat,
-		options.expanded === true ? undefined : OUTPUT_LINES,
 		"Click the code to copy the output",
 		typeof start === "number" && start > 0 ? start : undefined,
 	);
@@ -440,18 +421,20 @@ function phaseRow(phases: string[]): NativeChild {
 }
 
 /**
- * The call's data head: the verb and the program's first line. No Copy command
- * here — the program block under it carries the copy, so the fact appears once.
+ * The call's data head: the verb, then the counted facts. No target line and no
+ * Copy command — the program is the body, and the copy rides on its code.
  */
-function head(program: string, display: { name?: string; description?: string }): NativeToolHead {
-	const target = program === "" ? "" : firstLine(program);
-	return {
-		title: "Fabric",
-		target: target === "" ? undefined : target,
-		targetKind: target === "" ? undefined : "command",
-		lang: target === "" ? undefined : "typescript",
-		meta: display.name === undefined ? undefined : [display.name],
-	};
+function head(
+	program: string,
+	display: { name?: string; description?: string },
+	extraMeta: string[],
+): NativeToolHead {
+	const lines = program === "" ? 0 : program.split("\n").length;
+	const meta: string[] = [];
+	if (display.name !== undefined) meta.push(display.name);
+	if (lines > 0) meta.push("TypeScript · " + countLabel(lines, "line"));
+	meta.push(...extraMeta);
+	return { title: "Fabric", meta: meta.length > 0 ? meta : undefined };
 }
 
 /** The call, before any result exists. */
@@ -466,11 +449,11 @@ export function describeFabricCall(
 	if (meta !== undefined) body.push(meta);
 	if (display.description !== undefined) body.push(text([span(display.description, "muted")]));
 	if (program !== "") {
-		body.push(programCard(program, options));
+		body.push(programSection(program));
 	} else if (options.argsComplete === false) {
 		body.push(muted("composing…"));
 	}
-	return { tool: head(program, display), body, preview: "children" };
+	return { tool: head(program, display, []), body, preview: "children" };
 }
 
 function readAudit(value: unknown): FabricAudit | undefined {
@@ -549,11 +532,17 @@ export function describeFabricResult(
 	const audits = details.audits ?? [];
 	const phases = details.phases ?? [];
 	const failed = result?.isError === true || details.success === false;
+	const failedCalls = audits.filter(audit => audit.success === false).length;
+
+	const extraMeta: string[] = [];
+	if (audits.length > 0) extraMeta.push(countLabel(audits.length, "call"));
+	if (failedCalls > 0) extraMeta.push(failedCalls + " failed");
+	if (phases.length > 0) extraMeta.push(countLabel(phases.length, "phase"));
 
 	const body: NativeChild[] = [];
 	const meta = metaLine(options, args, options.isPartial === true);
 	if (meta !== undefined) body.push(meta);
-	if (program !== "") body.push(programCard(program, options));
+	if (program !== "") body.push(programSection(program));
 	if (audits.length > 0 || phases.length > 0) body.push(callsSection(audits, phases, options));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
@@ -561,15 +550,13 @@ export function describeFabricResult(
 		body.push(muted(details.progress));
 	}
 
+	// No rule nodes: the tool body draws its own hairline wherever the child kind changes
+	// (elements/work.html#tool), so an explicit rule would stack a second line on it.
 	const output = outputNode(result?.content, details, options);
-	if (output !== undefined) {
-		body.push({ k: "rule", key: "rule-calls" });
-		body.push(output);
-	}
-	body.push({ k: "rule", key: "rule-foot" });
+	if (output !== undefined) body.push(output);
 	const foot = footLine(failed, options, args);
 	if (foot !== undefined) body.push(foot);
 
-	return { tool: head(program, display), body, preview: "children" };
+	return { tool: head(program, display, extraMeta), body, preview: "children" };
 }
 

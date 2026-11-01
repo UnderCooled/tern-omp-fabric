@@ -50,7 +50,7 @@ const byKind = (children: readonly NativeChild[] | undefined, k: string): Native
 	nodes(children).find(node => node.k === k);
 const byKey = (children: readonly NativeChild[] | undefined, key: string): NativeNode | undefined =>
 	nodes(children).find(node => node.key === key);
-const codeOf = (card: NativeNode): NativeNode => unwrap(byKind(card.c, "code"), "the card's code node");
+const codeOf = (section: NativeNode): NativeNode => unwrap(byKind(section.c, "code"), "the section's code node");
 const auditsOf = (details: FabricDetails): FabricAudit[] => details.audits ?? [];
 const toolHead = (view: NativeToolView): NativeToolHead => unwrap(view.tool, "tool head");
 
@@ -77,14 +77,14 @@ describe("programText / codeLineCount", () => {
 describe("describeFabricCall", () => {
 	const view = unwrap(describeFabricCall(fabricCallArgs, options), "call view");
 
-	test("head names the call only: no Copy command, no counts", () => {
+	test("head is the verb and the counts: no target line, no Copy command", () => {
 		const head = toolHead(view);
 		expect(head.title).toBe("Fabric");
-		expect(head.target).toBe("const pattern = /foo/;");
-		expect(head.targetKind).toBe("command");
-		expect(head.lang).toBe("typescript");
+		expect(head.target).toBeUndefined();
+		expect(head.targetKind).toBeUndefined();
+		expect(head.lang).toBeUndefined();
 		expect(head.command).toBeUndefined();
-		expect(head.meta).toEqual(["Sweep TODOs"]);
+		expect(head.meta).toEqual(["Sweep TODOs", "TypeScript · 12 lines"]);
 	});
 
 	test("the meta line carries the walltime, the timeout and the directory", () => {
@@ -104,18 +104,19 @@ describe("describeFabricCall", () => {
 		expect(span.t).toBe("Greps src for TODO markers and reports files.");
 	});
 
-	test("the program is a framed card, folded, head-labelled with its line count", () => {
-		const program = unwrap(byKey(view.body, "program"), "program card");
-		expect(program.k).toBe("card");
+	test("the program is a section that starts folded", () => {
+		const program = unwrap(byKey(view.body, "program"), "program section");
+		expect(program.k).toBe("section");
 		expect(props(program).role).toBe("omp-fabric.program");
 		expect(props(program).collapsible).toBe(true);
 		expect(props(program).collapsed).toBe(true);
-		expect(previewLines(program)).toBe(8);
-		expect(joined(headSpans(program))).toBe("TypeScript · 12 lines");
+		expect(previewLines(program)).toBeUndefined();
+		// The line count lives in the head; the fold is labeled, not counted again.
+		expect(joined(headSpans(program))).toBe("program");
 	});
 
-	test("the program card's code is the whole program and copies on click", () => {
-		const code = codeOf(unwrap(byKey(view.body, "program"), "program card"));
+	test("the program section's code is the whole program and copies on click", () => {
+		const code = codeOf(unwrap(byKey(view.body, "program"), "program section"));
 		expect(props(code).text).toBe(programText(fabricCallArgs));
 		expect(props(code).lang).toBe("typescript");
 		expect(actionOf(code).click).toBe("copy");
@@ -123,24 +124,24 @@ describe("describeFabricCall", () => {
 		expect(props(code).title).toBe("Click the code to copy the program");
 	});
 
-	test("expanded starts the program card open and clamped at 200 lines", () => {
+	test("no card anywhere: Tern flattens nested cards in a tool body", () => {
+		for (const node of nodes(view.body)) expect(node.k).not.toBe("card");
+	});
+
+	test("the expanded flag does not change the starting fold", () => {
 		const expanded = unwrap(describeFabricCall(fabricCallArgs, { expanded: true }), "expanded call view");
-		const program = unwrap(byKey(expanded.body, "program"), "program card");
-		expect(props(program).collapsed).toBe(false);
-		expect(previewLines(program)).toBe(200);
+		expect(props(unwrap(byKey(expanded.body, "program"), "program section")).collapsed).toBe(true);
 	});
 
 	test("incomplete args with no code show composing…", () => {
 		const composing = unwrap(describeFabricCall(undefined, { argsComplete: false }), "composing view");
-		const kinds = kindList(composing.body);
-		expect(kinds).toEqual(["text"]);
+		expect(kindList(composing.body)).toEqual(["text"]);
 		expect(joined(textSpans(unwrap(nodes(composing.body)[0], "composing text")))).toBe("composing…");
 	});
 
-	test("complete args with no code render an empty body", () => {
+	test("complete args with no code keep only the meta line", () => {
 		const empty = unwrap(describeFabricCall(undefined, options), "empty call view");
-		const kinds = kindList(empty.body);
-		expect(kinds).toEqual(["text"]);
+		expect(kindList(empty.body)).toEqual(["text"]);
 		expect(joined(textSpans(unwrap(nodes(empty.body)[0], "meta line")))).toBe("1.2s · " + CWD);
 	});
 });
@@ -149,28 +150,28 @@ describe("describeFabricResult", () => {
 	const settled: DescribeOptions = { cwd: CWD, elapsedMs: 2400 };
 	const view = unwrap(describeFabricResult(fabricResult, settled, fabricCallArgs), "result view");
 
-	test("head is the call's head", () => {
+	test("head: verb, line count, calls, failures, phases", () => {
 		const head = toolHead(view);
 		expect(head.title).toBe("Fabric");
-		expect(head.target).toBe("const pattern = /foo/;");
+		expect(head.target).toBeUndefined();
 		expect(head.command).toBeUndefined();
-		expect(head.meta).toEqual(["Sweep TODOs"]);
+		expect(head.meta).toEqual(["Sweep TODOs", "TypeScript · 12 lines", "3 calls", "1 failed", "2 phases"]);
 	});
 
-	test("body order: meta, program, calls, rule, output, rule, foot", () => {
-		expect(kindList(view.body)).toEqual(["text", "card", "section", "rule", "card", "rule", "text"]);
+	test("body order: meta, program, calls, output, foot (the tool draws its own separators)", () => {
+		expect(kindList(view.body)).toEqual(["text", "section", "section", "section", "text"]);
 	});
 
 	test("a settled result drops the walltime from the meta line", () => {
 		expect(joined(textSpans(unwrap(byKey(view.body, "meta"), "meta line")))).toBe("timeout 30s · " + CWD);
 	});
 
-	test("the calls section folds, and its head counts calls, failures and phases", () => {
+	test("the calls section folds under a plain label, phases first", () => {
 		const calls = unwrap(byKey(view.body, "calls"), "calls section");
 		expect(props(calls).role).toBe("omp-fabric.calls");
 		expect(props(calls).collapsible).toBe(true);
 		expect(props(calls).collapsed).toBe(true);
-		expect(joined(headSpans(calls))).toBe("3 calls · 1 failed · 2 phases");
+		expect(joined(headSpans(calls))).toBe("calls");
 		expect(kindList(calls.c)).toEqual(["row", "section", "section", "section"]);
 		expect(props(unwrap(byKind(calls.c, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
@@ -207,7 +208,11 @@ describe("describeFabricResult", () => {
 
 	test("an unfinished call reports its timeout instead of an outcome", () => {
 		const running = unwrap(
-			describeFabricResult({ isError: false, content: [], details: { audits: [], phases: [] } }, { cwd: CWD, isPartial: true }, fabricCallArgs),
+			describeFabricResult(
+				{ isError: false, content: [], details: { audits: [], phases: [] } },
+				{ cwd: CWD, isPartial: true },
+				fabricCallArgs,
+			),
 			"running result view",
 		);
 		expect(joined(textSpans(unwrap(byKey(running.body, "foot"), "foot line")))).toBe("timeout 30s");
@@ -285,14 +290,8 @@ describe("caps", () => {
 		expect(joined(textSpans(more))).toBe("… 4 calls more");
 	});
 
-	test("expanded: all 12 audit sections, and the blocks start open at 200 lines", () => {
-		const view = render({ cwd: CWD, expanded: true });
-		expect(auditSections(view)).toHaveLength(12);
-		for (const key of ["program", "output"]) {
-			const card = unwrap(byKey(view.body, key), key + " card");
-			expect(props(card).collapsed).toBe(false);
-			expect(previewLines(card)).toBe(200);
-		}
+	test("expanded: all 12 audit sections", () => {
+		expect(auditSections(render({ cwd: CWD, expanded: true }))).toHaveLength(12);
 	});
 });
 
@@ -325,27 +324,30 @@ describe("trace-only details", () => {
 	});
 
 	test("undefined details render program and output without throwing", () => {
-		const bare = unwrap(describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs), "no-details view");
+		const bare = unwrap(
+			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs),
+			"no-details view",
+		);
 		expect(byKey(bare.body, "calls")).toBeUndefined();
 		expect(byKey(bare.body, "program")).toBeDefined();
 		expect(byKey(bare.body, "output")).toBeDefined();
 	});
 });
 
-describe("output card", () => {
+describe("output section", () => {
 	const view = unwrap(describeFabricResult(fabricResult, options, fabricCallArgs), "result view");
-	const card = unwrap(byKey(view.body, "output"), "output card");
+	const section = unwrap(byKey(view.body, "output"), "output section");
 
-	test("is a framed card folded at 12 lines", () => {
-		expect(card.k).toBe("card");
-		expect(props(card).role).toBe("omp-fabric.output");
-		expect(props(card).collapsed).toBe(true);
-		expect(previewLines(card)).toBe(12);
-		expect(joined(headSpans(card))).toBe("output · 12 lines");
+	test("is a section that starts folded, labelled with its line count", () => {
+		expect(section.k).toBe("section");
+		expect(props(section).role).toBe("omp-fabric.output");
+		expect(props(section).collapsible).toBe(true);
+		expect(props(section).collapsed).toBe(true);
+		expect(joined(headSpans(section))).toBe("output · 12 lines");
 	});
 
 	test("its code keeps the joined text, the language, the start line, and copies on click", () => {
-		const code = codeOf(card);
+		const code = codeOf(section);
 		expect(props(code).text).toBe(OUTPUT_TEXT);
 		expect(props(code).lang).toBe("yaml");
 		expect(props(code).start).toBe(3);

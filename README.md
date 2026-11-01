@@ -10,7 +10,7 @@ terminal output. Both halves of the complaint that started this plugin:
 
 | Before | After |
 | --- | --- |
-| `{code:"const [a, b] = await Promise.all([…`, 160 characters, not expandable | the program as a framed TypeScript block folded to eight lines, unfolded and refolded by its own head, copied by a click on the code |
+| `{code:"const [a, b] = await Promise.all([…`, 160 characters, not expandable | the program as a highlighted block in its own foldable section, unfolded and refolded by its head, copied by a click on the code |
 | the whole result as one raw output dump | the call's walltime, timeout and directory, the phases and nested calls in one foldable section (arguments, their own output, timing, failures), the return value as highlighted YAML/JSON, and a foot line saying done or failed with the duration |
 
 omp's own terminal rendering is untouched: fabric keeps its `renderCall`/`renderResult`, and the
@@ -38,45 +38,48 @@ halves reload on save.
 
 ## What you get
 
-A `fabric_exec` card reads, top to bottom:
+A `fabric_exec` step reads, top to bottom:
 
 ```text
-Fabric  const [a, b] = await Promise.all([…      ← the verb and the program's first line
-├ 1.2s · timeout 30s · D:/repos/demo             ← walltime, timeout, working directory
-├ (the model's description, when it sent one)
-├ ▸ TypeScript · 42 lines                        ← folded program: head unfolds, click copies
-├ ▸ 3 calls · 1 failed · 2 phases                 ← phases and nested calls, folded
-│    [discover] [report]
-│    grep  /foo/ in src · 24ms
-│      pattern foo
-│      … (its own output, 6 lines folded)
-│    mcp.do_thing  deploy · failed · 3.1s
-│      (error) connection refused
-├ ───────────────────────────────────────────────
-├ ▸ output · 12 lines                            ← the program's return value
-├ ───────────────────────────────────────────────
-└ ✓ Done · 2.4s
+Fabric   Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases   ← head: verb and counts
+│ 1.2s · timeout 30s · D:/repos/demo                 ← walltime, timeout, working directory
+│ (the model's description, when it sent one)
+│ ▸ program                                           ← folded: its head unfolds, click copies
+│ ▸ calls                                             ← folded: phases, then one section per call
+│     [discover] [report]
+│     grep  /foo/ in src · 24ms
+│       pattern foo
+│       … (its own output, 6 lines folded)
+│     mcp.do_thing  deploy · failed · 3.1s
+│       (error) connection refused
+│ ▸ output · 12 lines                                 ← the program's return value, folded
+│ ✓ Done · 2.4s
 ```
 
-Every clamp is a disclosure: the code block's `N more lines`, the nested output's, and the
-card's own expand, which is omp's `ctrl+o` (`app.tools.expand`). The Tern plugin adds a palette
-row for the same action — **omp fabric: expand tool output** — so it is reachable without
-knowing the chord; it types `ctrl+o` into the focused omp pane.
+The three blocks are foldable sections, not frames: Tern draws exactly one ring per tool call and
+flattens anything framed inside it, so a nested card loses its border *and* its fold
+(`elements/work.html#tool`). The tool body draws a hairline wherever the child kind changes, which
+is where the dividers in that sketch come from.
+
+Every fold is the terminal's own state: the section heads unfold and refold independently, and
+`ctrl+o` (`app.tools.expand`) still expands the whole card. The Tern plugin adds a palette row for
+the same action — **omp fabric: expand tool output** — so it is reachable without knowing the
+chord; it types `ctrl+o` into the focused omp pane.
 
 ### Where this parts from omp's TUI
 
-- The head names the call and nothing else: `Fabric`, the program's first line, the display name. It
-  carries no Copy command — the program block under it is what you copy, so a click on its code
-  puts the whole program on the clipboard (and its menu offers Copy). The output block copies the
-  same way.
+- The head carries the verb and the counted facts — `Sweep TODOs · TypeScript · 42 lines · 3 calls ·
+  1 failed · 2 phases` — and no target line and no Copy command: the program itself is the body,
+  so repeating its first line up there would say the same thing twice.
+- Copy rides on the code: a click on the program block's code puts the whole program on the
+  clipboard, and the same code's context menu offers Copy. The output block copies the same way.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
-  to be read; this card keeps it, folded to eight lines.
+  to be read; here it is the first thing under the head, folded.
 - The call names its own facts: the walltime and the invocation's `timeoutMs` (while it runs), and
   the session's working directory.
-- The folds are the terminal's local state, kept per node: the program block, the calls section
-  and the output block each unfold and refold on their own, and `ctrl+o` still expands the whole
-  card.
+- The foot line says how the program ended and how long it took (`✓ Done · 2.4s`, `✗ Failed`,
+  `✗ Cancelled`), and says `timeout 30s` instead while the call has not returned.
 
 ## Limits
 
@@ -93,6 +96,9 @@ knowing the chord; it types `ctrl+o` into the focused omp pane.
   not visible to an extension and the foot line says nothing while the call runs.
 - The directory is the one omp was started in, captured when the extension loads; a program that
   changes its own working directory does not change the line.
+- No block inside a `fabric_exec` card can carry its own frame: the protocol draws one ring per tool
+  call and flattens nested frames by design, so the delimitation is the tool's own hairlines plus
+  the section heads, not borders around each block.
 
 ## Layout
 

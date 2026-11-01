@@ -160,6 +160,28 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, second pass (what Tern actually draws)
+
+The framed cards did nothing in the terminal: `TspToolProps` (pi-wire `tsp.d.ts:720-724`) has the
+terminal draw one frame per tool call and *flatten nested `card`/`tool` children into borderless
+sections*, and the tool page of the SDK docs adds that nested `code` loses its frame and head too. A
+nested card therefore lost both its ring and its `collapsed` state — which is exactly what the user
+saw: no borders, and the program and output drawn in full under a card that never folded.
+
+| Ask | Change |
+| --- | --- |
+| drop the head's first code line, bring the counts back | `head()` takes `extraMeta` again and sets `meta = [name?, "TypeScript · N lines", "N calls", "k failed", "P phases"]`; `target`/`targetKind`/`lang` are gone. |
+| the program fold must work | `card` became `section` (`collapsible: true, collapsed: true`), child `code` keeps the whole text and the copy action; no `preview` (a folded section hides its body, an open one shows the program whole). |
+| the output fold must work | same `section` shape, head `output · N lines`. |
+| borders | Impossible inside a tool body by protocol. Removed the explicit `rule` nodes too: the tool body draws its own hairline wherever the child kind changes, so a `rule` would stack a second line on it. |
+
+Consequences: `CALL_PROGRAM_LINES`, `OUTPUT_LINES`, `CODE_EXPANDED_LINES` and `card` are gone;
+`options.expanded` now only widens the audit cap. `calls` section head is the label `calls` (counts live in
+the head). Body order: `meta, program, calls, output, foot`, all sections except the two texts.
+
+Verification: `bun test` 34 pass / 0 fail, `bun run typecheck` clean, and the `index.ts` smoke prints that
+order with `k: "section"` for program/calls/output. Still unobserved in a real Tern pane.
+
 ## Revision 2026-11-01 (user review of the first cut)
 
 The first cut was rejected on layout: the head repeated the program, the reachable copy sat in the
