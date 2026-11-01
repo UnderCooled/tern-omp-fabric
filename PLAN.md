@@ -160,6 +160,23 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, fourteenth pass (outputs handed to the terminal's own clamp)
+
+Why the card had no expand hint: the hint is drawn for content the terminal knows it hid. We were
+cutting the text ourselves (`resultNodes`) and passing `preview: "children"`, so nothing was ever clamped
+by the card and Tern had nothing to offer.
+
+| Change | |
+| --- | --- |
+| `resultNodes` (self-clamping) removed | `resultNode(audit, index)` hands the whole text to `ansi` with `preview: { lines: 4 }`. |
+| the `calls` section removed | a preview inside a section gives way, which killed the clamp. Each call is now a `text` line (role `omp-fabric.call`) plus, when earned, its `ansi` — direct children of the card. |
+| when an output shows | `options.expanded`, or `endedAt - startedAt >= 2000`, or the call failed. |
+| CSS | the `calls` rule is gone; `omp-fabric.call` indents the line. |
+
+`bun test` 32 pass / 0 fail, `bun run typecheck` clean; smoke: folded `[code program, row phases, text call:0, text call:1,
+ansi output:1]`, expanded adds `ansi output:0`. `tern plugin reload` exits 0. The card now has clamped content, so
+the terminal can draw its own "N more lines" and expand hint.
+
 ## Revision 2026-11-01, thirteenth pass (the truncation note is text again)
 
 The `… N lines more` fold from the twelfth pass replaced the terminal's own hint, and the terminal

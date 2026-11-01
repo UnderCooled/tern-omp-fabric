@@ -44,14 +44,13 @@ A `fabric_exec` step reads, top to bottom:
 Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
 │ (the model's description, when it sent one)
 │ const [a, b] = await Promise.all([…        ← the program, 4 lines; whole once the card opens
-│ ▸ calls                                    ← open: phases, then one block per call
-│     [discover] [report]
-│     grep /foo/ in src · 24ms               ← the call, then only its own output
-│     ┌ src/a.ts:12: foo
-│     └ …
-│     deploy · failed · 3.1s
-│     ┌ connection refused
-│     └ …
+│ [discover] [report]                        ← the phases
+│ grep /foo/ in src · 24ms                   ← a fast call: its line is all it needs
+│ build · 5.2s                               ← a slow one: its output, clamped
+│ ┌ line 1
+│ └ … 12 lines more
+│ deploy · failed · 3.1s                     ← a failure always shows
+│ ┌ connection refused
 ```
 
 Every output in the card is a call's own: `audit.result` from fabric's audit trail, rendered under the
@@ -68,14 +67,12 @@ so the space under it belongs to what came back.
 The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
 under) beside the counted facts, so the body has no trailing status line.
 
-A call's output stays folded unless the call made you wait: one that took two seconds or more
-opens with its first four lines and a `… N lines more` note, and a failed call always opens. The
-program is clamped to four lines. Opening the card with `ctrl+o` (`app.tools.expand`) opens every call and
-drops both clamps, exactly as a block behaves inside a folded disclosure. Nothing the card draws is
-its own disclosure for that: the hint the terminal already shows for the card is what opens the
-rest. The `calls` section and each call head still fold on their own. The Tern plugin adds a palette
-row for the expand — **omp fabric: expand tool output** — so it is reachable without knowing the
-chord; it types `ctrl+o` into the focused omp pane.
+A call's output is shown only when it earned the space: two seconds of waiting, or a failure. The
+program and every shown output are `ansi`/`code` blocks clamped to four lines by the terminal
+itself — no text is cut here, so the `… N lines more` row and the card's expand hint are the
+terminal's own, drawn against the card. `ctrl+o` (`app.tools.expand`) opens every call at once. The Tern
+plugin adds a palette row for the same action — **omp fabric: expand tool output** — so it is
+reachable without knowing the chord; it types `ctrl+o` into the focused omp pane.
 
 The ring around the program is this plugin's Tern sheet, not the node tree: the protocol gives
 each tool call exactly one frame and flattens anything framed inside its body
@@ -94,14 +91,14 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, clamped to four lines.
-- Each nested call is its own block whose body is the output fabric recorded for it (`audit.result`),
-  so two calls never share one body. Fast calls keep that body folded — the head says what ran and
-  how long it took, which is enough for a call that returned at once — while a call that took two
-  seconds or more opens with four lines of output, and a failure always opens. The output is what
-  the sheet rings.
+- Each nested call is one line — what ran, its argument, how long — followed by the output fabric
+  recorded for it (`audit.result`) when the call took two seconds or more or failed. A fast call that
+  worked is just its line: it needs no output to be read. Two calls never share a body, and the
+  output is what the sheet rings.
 - A call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
-  printed JSON otherwise.
+  printed JSON otherwise. It is handed over whole and clamped by the terminal's `preview`, which is
+  what keeps the `… N lines more` row and the card's expand hint on screen.
 - The program's own returned text is not drawn. fabric hands it over as one blob — its `logs` and
   the returned value joined, with no attribution to a call — which is exactly the merged output
   this card used to show. What a call produced is read from its own audit instead.

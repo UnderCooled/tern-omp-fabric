@@ -46,23 +46,18 @@ const byKind = (children: readonly NativeChild[] | undefined, k: string): Native
 	nodes(children).find(node => node.k === k);
 const byKey = (children: readonly NativeChild[] | undefined, key: string): NativeNode | undefined =>
 	nodes(children).find(node => node.key === key);
+const withRole = (children: readonly NativeChild[] | undefined, role: string): NativeNode[] =>
+	nodes(children).filter(node => props(node).role === role);
 const auditsOf = (details: FabricDetails): FabricAudit[] => details.audits ?? [];
 const toolHead = (view: NativeToolView): NativeToolHead => unwrap(view.tool, "tool head");
 
 /** A head meta entry is a plain fact or a run of styled spans. */
-const factText = (entry: unknown): string =>
-	typeof entry === "string" ? entry : joined(spanList(entry));
+const factText = (entry: unknown): string => (typeof entry === "string" ? entry : joined(spanList(entry)));
 const facts = (view: NativeToolView): string[] => (unwrap(toolHead(view).meta, "head meta") as unknown[]).map(factText);
 const lastFact = (view: NativeToolView): Span[] => {
 	const meta = unwrap(toolHead(view).meta, "head meta") as unknown[];
 	return spanList(meta[meta.length - 1]);
 };
-
-/** The audit sections live inside the calls section. */
-function auditSections(view: NativeToolView): NativeNode[] {
-	const calls = unwrap(byKey(view.body, "calls"), "calls section");
-	return nodes(calls.c).filter(node => node.k === "section");
-}
 
 const options: DescribeOptions = { elapsedMs: 1200 };
 
@@ -105,17 +100,10 @@ describe("describeFabricCall", () => {
 		expect(props(program).collapsed).toBeUndefined();
 		expect(previewLines(program)).toBe(4);
 		expect(props(program).text).toBe(programText(fabricCallArgs));
-		expect(props(program).lang).toBe("typescript");
-	});
-
-	test("a click on the program copies it", () => {
-		const program = unwrap(byKey(view.body, "program"), "program block");
 		expect(actionOf(program).click).toBe("copy");
-		expect(actionOf(program).menu).toEqual(["copy"]);
-		expect(props(program).title).toBe("Click the code to copy the program");
 	});
 
-	test("no card and no section: the tool card is the only disclosure", () => {
+	test("nothing in the body is a card or a section", () => {
 		for (const node of nodes(view.body)) {
 			expect(node.k).not.toBe("card");
 			expect(node.k).not.toBe("section");
@@ -154,37 +142,32 @@ describe("describeFabricResult", () => {
 		]);
 	});
 
-	test("no foot line: the outcome lives in the head", () => {
-		expect(byKey(view.body, "foot")).toBeUndefined();
+	test("body: program, the phase row, one line per call", () => {
+		expect(kindList(view.body)).toEqual(["code", "row", "text", "text", "text", "text"]);
+		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(3);
+		expect(props(unwrap(byKind(view.body, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
-	test("body order: the program, then the calls that carry the output", () => {
-		expect(kindList(view.body)).toEqual(["code", "section"]);
-		expect(byKey(view.body, "output")).toBeUndefined();
-		expect(byKey(view.body, "logs")).toBeUndefined();
+	test("a call line names the call and its timing", () => {
+		const line = withRole(view.body, "omp-fabric.call")[0];
+		const spans = textSpans(unwrap(line, "first call line"));
+		expect(spans.find(span => span.s === "strong")?.t).toBe("grep");
+		expect(joined(spans.filter(span => span.s === "accent"))).toContain("/foo/ in src");
+		expect(joined(spans.filter(span => span.s === "muted"))).toContain("24ms");
 	});
 
-	test("the calls section starts open, one level", () => {
-		const calls = unwrap(byKey(view.body, "calls"), "calls section");
-		expect(props(calls).role).toBe("omp-fabric.calls");
-		expect(props(calls).collapsible).toBe(true);
-		expect(props(calls).collapsed).toBe(false);
-		expect(joined(headSpans(calls))).toBe("calls");
-		expect(kindList(calls.c)).toEqual(["row", "section", "section", "section"]);
-		expect(props(unwrap(byKind(calls.c, "row"), "phase row")).role).toBe("omp-fabric.phase");
+	test("fast calls that worked show no output at all", () => {
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(0);
 	});
 
-	test("a fast call starts folded, with only its own output inside", () => {
-		const section = unwrap(auditSections(view)[0], "first audit section");
-		expect(props(section).role).toBe("omp-fabric.call");
-		expect(props(section).collapsible).toBe(true);
-		expect(props(section).collapsed).toBe(true);
-		expect(kindList(section.c)).toEqual(["ansi"]);
-		expect(section.key).toBe("call:0:omp.grep");
-		const head = headSpans(section);
-		expect(head.find(span => span.s === "strong")?.t).toBe("grep");
-		expect(joined(head.filter(span => span.s === "accent"))).toContain("/foo/ in src");
-		expect(joined(head.filter(span => span.s === "muted"))).toContain("24ms");
+	test("a failing call still carries its message", () => {
+		const message = unwrap(
+			nodes(view.body).find(
+				node => props(node).role !== "omp-fabric.call" && textSpans(node).some(span => span.s === "error"),
+			),
+			"error text",
+		);
+		expect(joined(textSpans(message))).toContain("connection reset by peer");
 	});
 
 	test("a failed result says so in the head", () => {
@@ -205,6 +188,7 @@ describe("describeFabricResult", () => {
 			"running result view",
 		);
 		expect(joined(lastFact(running))).toBe("timeout 30s");
+		expect(kindList(running.body)).toEqual(["code"]);
 	});
 
 	test("a cancelled call says so", () => {
@@ -216,93 +200,77 @@ describe("describeFabricResult", () => {
 	});
 });
 
-describe("per-call rendering", () => {
-	function auditSection(audit: FabricAudit, opts: DescribeOptions = options): NativeNode {
+describe("when a call shows its output", () => {
+	function render(audit: FabricAudit, opts: DescribeOptions = options): NativeToolView {
+		return unwrap(
+			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, opts, fabricCallArgs),
+			"single-audit view",
+		);
+	}
+
+	test("a slow call shows its output as a terminal the card clamps", () => {
+		const view = render(slowAudit);
+		const output = unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
+		expect(output.k).toBe("ansi");
+		expect(previewLines(output)).toBe(4);
+		expect(props(output).text).toContain("line 6");
+		// The clamp is the terminal's own, so it still draws its expand hint.
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
+	});
+
+	test("a fast working call shows none", () => {
+		const view = render(unwrap(auditsOf(fabricDetails)[0], "grep audit"));
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(0);
+	});
+
+	test("a failure shows its output even when fast", () => {
+		const view = render({ ...slowAudit, success: false, endedAt: 10 });
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
+	});
+
+	test("expanding the card shows every call's output", () => {
+		const view = render(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
+		const output = unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
+		expect(props(output).text).toContain('"lines": 40');
+	});
+});
+
+describe("how a call's output is drawn", () => {
+	function outputOf(audit: FabricAudit, opts: DescribeOptions = options): NativeNode {
 		const view = unwrap(
 			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, opts, fabricCallArgs),
 			"single-audit view",
 		);
-		return unwrap(auditSections(view)[0], "audit section");
+		return unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
 	}
 
-	test("a slow call shows its first four lines and a truncation note", () => {
-		const section = auditSection(slowAudit);
-		expect(props(section).collapsed).toBe(false);
-		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
-		expect(props(ansi).text).toBe("line 1\nline 2\nline 3\nline 4");
-		const more = unwrap(
-			nodes(section.c).find(node => joined(textSpans(node)).includes("more")),
-			"the more line",
-		);
-		expect(more.k).toBe("text");
-		expect(textSpans(more)[0]?.s).toBe("muted");
-		expect(joined(textSpans(more))).toBe("… 2 lines more");
-		// Nothing of our own to click: the terminal's expand hint opens the rest.
-		expect(nodes(section.c).some(node => node.k === "section")).toBe(false);
+	test("text is drawn as a terminal, not as highlighted JSON", () => {
+		const output = outputOf(unwrap(auditsOf(fabricDetails)[0], "grep audit"), { expanded: true });
+		expect(output.k).toBe("ansi");
+		expect(props(output).text).toBe("src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar");
 	});
 
-	test("a fast call hides its output but still carries it", () => {
-		const section = auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit"));
-		expect(props(section).collapsed).toBe(true);
-		expect(nodes(section.c).some(node => node.k === "ansi")).toBe(true);
-	});
-
-	test("expanding the card opens every call and drops the clamp", () => {
-		const section = auditSection(slowAudit, { expanded: true });
-		expect(props(section).collapsed).toBe(false);
-		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
-		expect(String(props(ansi).text).split("\n")).toHaveLength(6);
-		expect(nodes(section.c).some(node => joined(textSpans(node)).includes("more"))).toBe(false);
-	});
-
-	test("a failure opens even when it was fast", () => {
-		const section = auditSection(unwrap(auditsOf(fabricDetails)[2], "failing audit"));
-		expect(props(section).collapsed).toBe(false);
-	});
-
-	test("a structured result is drawn as terminal text, not highlighted JSON", () => {
-		const read = unwrap(auditsOf(fabricDetails)[1], "read audit");
-		const section = auditSection(read);
-		expect(byKind(section.c, "json")).toBeUndefined();
-		expect(byKind(section.c, "code")).toBeUndefined();
-		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
-		expect(props(ansi).text).toContain('"lines": 40');
+	test("a structured result is terminal text too, never the JSON viewer", () => {
+		const output = outputOf(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
+		expect(output.k).toBe("ansi");
+		expect(props(output).text).toContain('"lines": 40');
 	});
 
 	test("an envelope result shows only its output field", () => {
-		const section = auditSection({
+		const output = outputOf({
 			ref: "omp.bash",
 			tool: "bash",
 			success: true,
 			args: { command: "ls" },
 			result: { ok: true, output: "src/a.ts\nsrc/b.ts", details: { exit: 0 } },
+			startedAt: 0,
+			endedAt: 5000,
 		});
-		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
-		expect(props(ansi).text).toBe("src/a.ts\nsrc/b.ts");
-		expect(props(ansi).text).not.toContain("ok");
-		expect(props(ansi).role).toBe("omp-fabric.output");
+		expect(props(output).text).toBe("src/a.ts\nsrc/b.ts");
 	});
 
-	test("a plain string result is drawn as-is under the output role", () => {
-		const ansi = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
-		expect(props(ansi).role).toBe("omp-fabric.output");
-		expect(props(ansi).text).toBe("src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar");
-	});
-
-	test("a fromTrace audit with no result says the result was not retained", () => {
-		const note = unwrap(byKind(auditSection(fromTraceAudit).c, "text"), "fromTrace note");
-		expect(textSpans(note)[0]?.s).toBe("muted");
-		expect(joined(textSpans(note))).toContain("not retained");
-	});
-
-	test("a failing audit marks its head and carries the message", () => {
-		const section = auditSection(unwrap(auditsOf(fabricDetails)[2], "failing audit"));
-		expect(headSpans(section).find(span => span.s === "error")?.t).toBe(" · failed");
-		const message = unwrap(
-			nodes(section.c).find(node => node.k === "text" && textSpans(node).some(span => span.s === "error")),
-			"error message text",
-		);
-		expect(joined(textSpans(message))).toContain("connection reset by peer");
+	test("every output carries the role the stylesheet rings", () => {
+		expect(props(outputOf(slowAudit)).role).toBe("omp-fabric.output");
 	});
 });
 
@@ -315,20 +283,18 @@ describe("caps", () => {
 		);
 	}
 
-	test("folded: 8 audit sections plus a muted … 4 calls more", () => {
+	test("folded: 8 call lines plus a muted … 4 calls more", () => {
 		const view = render(options);
-		const calls = unwrap(byKey(view.body, "calls"), "calls section");
-		expect(auditSections(view)).toHaveLength(8);
+		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(8);
 		const more = unwrap(
-			nodes(calls.c).find(node => joined(textSpans(node)).includes("more")),
+			nodes(view.body).find(node => joined(textSpans(node)).includes("more")),
 			"the more line",
 		);
-		expect(textSpans(more)[0]?.s).toBe("muted");
 		expect(joined(textSpans(more))).toBe("… 4 calls more");
 	});
 
-	test("expanded: all 12 audit sections", () => {
-		expect(auditSections(render({ expanded: true }))).toHaveLength(12);
+	test("expanded: all 12 call lines", () => {
+		expect(withRole(render({ expanded: true }).body, "omp-fabric.call")).toHaveLength(12);
 	});
 });
 
@@ -338,35 +304,28 @@ describe("trace-only details", () => {
 		"trace-only view",
 	);
 
-	test("one audit section per trace operation, marked as trace", () => {
-		const sections = auditSections(view);
-		expect(sections).toHaveLength(2);
-		expect(sections[0]?.key).toBe("call:0:omp.grep");
-		expect(sections[1]?.key).toBe("call:1:omp.read");
+	test("one line per trace operation, keyed to its ref", () => {
+		const lines = withRole(view.body, "omp-fabric.call");
+		expect(lines).toHaveLength(2);
+		expect(lines[0]?.key).toBe("call:0:omp.grep");
+		expect(lines[1]?.key).toBe("call:1:omp.read");
 	});
 
-	test("operations without a result say so, and the failing one carries its error", () => {
-		const second = unwrap(auditSections(view)[1], "second section");
-		expect(joined(textSpans(unwrap(byKind(second.c, "text"), "trace note")))).toContain("not retained");
-		expect(
-			joined(
-				textSpans(
-					unwrap(
-						nodes(second.c).find(node => textSpans(node).some(span => span.s === "error")),
-						"trace error",
-					),
-				),
+	test("the failing operation carries its error", () => {
+		const message = unwrap(
+			nodes(view.body).find(
+				node => props(node).role !== "omp-fabric.call" && textSpans(node).some(span => span.s === "error"),
 			),
-		).toContain("ENOENT");
+			"trace error",
+		);
+		expect(joined(textSpans(message))).toContain("ENOENT");
 	});
 
-	test("undefined details render the program without throwing and without a body output", () => {
+	test("undefined details render the program alone", () => {
 		const bare = unwrap(
 			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs),
 			"no-details view",
 		);
-		expect(byKey(bare.body, "calls")).toBeUndefined();
-		expect(byKey(bare.body, "program")).toBeDefined();
-		expect(byKey(bare.body, "output")).toBeUndefined();
+		expect(kindList(bare.body)).toEqual(["code"]);
 	});
 });

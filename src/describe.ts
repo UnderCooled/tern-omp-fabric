@@ -218,60 +218,60 @@ function callDuration(audit: FabricAudit): number | undefined {
 	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
 
-/**
- * One call's output, as output rather than as data. The role is what the
- * stylesheet rings. `lines` clamps it here rather than through `preview`,
- * because a preview gives way inside an open section and this clamp must hold.
- */
-function resultNodes(audit: FabricAudit, lines: number): NativeChild[] {
-	const result = audit.result;
-	if (result === undefined || result === null) {
-		return audit.fromTrace === true ? [muted("result not retained after reload")] : [];
-	}
-	const text = resultText(result);
-	if (text === undefined) return [muted("result not shown")];
-	if (text.trim() === "") return [];
-	const all = text.split("\n");
-	if (all.length <= lines) {
-		return [{ k: "ansi", key: "output", p: { text, role: "omp-fabric.output" } }];
-	}
-	// Plain truncation, no fold of its own: the hint the terminal already draws for
-	// the card (ctrl+o / omp's app.tools.expand) is what opens the rest.
-	return [
-		{ k: "ansi", key: "output", p: { text: all.slice(0, lines).join("\n"), role: "omp-fabric.output" } },
-		muted("… " + countLabel(all.length - lines, "line") + " more"),
-	];
-}
-
-function auditSection(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild {
+/** The call's own line: the tool, its one argument, how long it took. */
+function callHead(audit: FabricAudit): Span[] {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
 	const label = coreToolName(audit) ?? raw;
 	const head: Span[] = [span(label === "" ? "call" : label, "strong")];
 	const detail = callDetail(audit);
 	if (detail !== undefined) head.push(span(" "), span(detail, "accent"));
-	if (audit.startedAt !== undefined && audit.endedAt !== undefined) {
-		const took = formatDuration(audit.endedAt - audit.startedAt);
-		if (took !== undefined) head.push(span(` · ${took}`, "muted"));
-	}
+	const took = formatDuration(callDuration(audit));
+	if (took !== undefined) head.push(span(` · ${took}`, "muted"));
 	if (audit.success === false) head.push(span(" · failed", "error"));
+	return head;
+}
 
-	// A fast call keeps its output folded; one that made the user wait two seconds
-	// or more shows its first four lines without being asked, and a failure always
-	// shows. The card's own expand opens every one of them whole.
-	const expanded = options.expanded === true;
+/**
+ * One call's output as a terminal, clamped by the terminal itself: `preview`
+ * is what draws the card's "N more lines" and its expand hint, so the text is
+ * handed over whole. The card's own expand is the only disclosure that lifts it.
+ */
+function resultNode(audit: FabricAudit, index: number): NativeChild | undefined {
+	const result = audit.result;
+	if (result === undefined || result === null) {
+		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
+	}
+	const text = resultText(result);
+	if (text === undefined) return muted("result not shown");
+	if (text.trim() === "") return undefined;
+	return {
+		k: "ansi",
+		key: `output:${index}`,
+		p: { text, preview: { lines: OUTPUT_PREVIEW_LINES }, role: "omp-fabric.output" },
+	};
+}
+
+/**
+ * One call: its line, and — when it made the user wait two seconds or more, or
+ * it failed — its output. A fast call that worked is just its line. Everything
+ * here is a direct child of the card, because a preview inside a section would
+ * give way and the terminal would stop drawing its own expand affordance.
+ */
+function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
+	const nodes: NativeChild[] = [
+		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: callHead(audit), role: "omp-fabric.call" } },
+	];
 	const slow = (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
 	const failed = audit.success === false;
-	const children: NativeChild[] = resultNodes(audit, expanded ? Number.POSITIVE_INFINITY : OUTPUT_PREVIEW_LINES);
-	if (failed && audit.error) {
-		children.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
+	if (options.expanded === true || slow || failed) {
+		const body = resultNode(audit, index);
+		if (body !== undefined) nodes.push(body);
 	}
-	if (audit.resultTruncated === true) children.push(muted("truncated"));
-	return {
-		k: "section",
-		key: `call:${index}:${audit.ref}`,
-		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: !(expanded || slow || failed) },
-		c: children,
-	};
+	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
+	if (failed && audit.error) {
+		nodes.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
+	}
+	return nodes;
 }
 
 /** Before anything has returned: the deadline it runs under, or nothing. */
@@ -331,26 +331,19 @@ function programBlock(program: string): NativeChild {
 	);
 }
 
-/** One open section over the phases and the nested calls (the counts sit in the head). */
-function callsSection(audits: FabricAudit[], phases: string[], options: DescribeOptions): NativeChild {
-	const label = audits.length > 0 ? "calls" : "phases";
-	const children: NativeChild[] = [];
-	if (phases.length > 0) children.push(phaseRow(phases));
+/** The phases, then one block per call (the counts sit in the head). */
+function callBlocks(audits: FabricAudit[], phases: string[], options: DescribeOptions): NativeChild[] {
+	const nodes: NativeChild[] = phases.length > 0 ? [phaseRow(phases)] : [];
 	const limit = options.expanded === true ? AUDITS_EXPANDED : AUDITS_COLLAPSED;
 	const shown = audits.slice(0, limit);
 	for (let index = 0; index < shown.length; index += 1) {
 		const audit = shown[index];
-		if (audit !== undefined) children.push(auditSection(audit, index, options));
+		if (audit !== undefined) nodes.push(...callBlock(audit, index, options));
 	}
 	if (audits.length > shown.length) {
-		children.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));
+		nodes.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));
 	}
-	return {
-		k: "section",
-		key: "calls",
-		p: { head: [span(label, "muted")], role: "omp-fabric.calls", collapsible: true, collapsed: false },
-		c: children,
-	};
+	return nodes;
 }
 
 
@@ -480,7 +473,7 @@ export function describeFabricResult(
 
 	const body: NativeChild[] = [];
 	if (program !== "") body.push(programBlock(program));
-	if (audits.length > 0 || phases.length > 0) body.push(callsSection(audits, phases, options));
+	body.push(...callBlocks(audits, phases, options));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
 	} else if (audits.length === 0 && details.progress !== undefined) {
