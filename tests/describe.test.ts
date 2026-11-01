@@ -271,9 +271,13 @@ describe("when a call shows its output", () => {
 			startedAt: 0,
 			endedAt: 40,
 		});
-		const command = unwrap(byKey(view.body, "call:0:command"), "command block");
+		const row = unwrap(byKey(view.body, "call:0:command"), "command row");
+		expect(row.k).toBe("row");
+		const indent = unwrap(nodes(row.c)[0], "indent cell");
+		expect(joined(textSpans(indent))).toBe("  ");
+		const command = unwrap(nodes(row.c)[1], "command block");
 		expect(command.k).toBe("code");
-		expect(props(command)).toEqual({
+		expect(props(command)).toMatchObject({
 			text: "bun test 2>&1 | tail -4",
 			lang: "bash",
 			wrap: true,

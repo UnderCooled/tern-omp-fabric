@@ -460,10 +460,26 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	const command = bashCommand(audit);
 	if (command !== undefined) {
 		nodes.push({
-			k: "code",
+			k: "row",
 			key: `call:${index}:command`,
-			// Wrapped, not scrolled: a long command read sideways is not read at all.
-			p: { text: command, lang: "bash", wrap: true, role: "omp-fabric.command" },
+			c: [
+				// Two cells in, so the block sits under the label instead of running
+				// out past it to the left edge.
+				{ k: "text", key: `call:${index}:indent`, p: { spans: [span("  ")], min: { w: "2ch" }, shrink: 0 } },
+				{
+					k: "code",
+					key: `call:${index}:command-text`,
+					// Wrapped, not scrolled: a long command read sideways is not read at all.
+					p: {
+						text: command,
+						lang: "bash",
+						wrap: true,
+						role: "omp-fabric.command",
+						grow: 1,
+						basis: 0,
+					},
+				},
+			],
 		});
 	}
 	if (body !== undefined) nodes.push(body);

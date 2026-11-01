@@ -165,7 +165,9 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 `bashCommand` takes `args.command` whole for a bash call; `callBlock` drops a `code` node with
 `lang: "bash"` and role `omp-fabric.command` right after the call line, and `callHead` no longer puts a
 one-line `$ …` copy of it in the line. Nothing collapses it: the block is the call's subject, not a
-detail. It carries `wrap: true`, so a long command folds into the pane width instead of scrolling.
+detail. It carries `wrap: true`, so a long command folds into the pane width instead of scrolling,
+and sits inside a `row` behind a 2ch spacer so the block lines up under the call label instead of
+starting left of it.
 
 `bun test` 44 pass / 0 fail, `bun run typecheck` clean, `oxlint` exit 0; smoke: a bash audit renders
 `bash · 41ms`, then the command as `code[bash]`, then the output fold.
