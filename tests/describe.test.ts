@@ -276,6 +276,7 @@ describe("when a call shows its output", () => {
 		expect(props(command)).toEqual({
 			text: "bun test 2>&1 | tail -4",
 			lang: "bash",
+			wrap: true,
 			role: "omp-fabric.command",
 		});
 		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");

@@ -462,7 +462,8 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 		nodes.push({
 			k: "code",
 			key: `call:${index}:command`,
-			p: { text: command, lang: "bash", role: "omp-fabric.command" },
+			// Wrapped, not scrolled: a long command read sideways is not read at all.
+			p: { text: command, lang: "bash", wrap: true, role: "omp-fabric.command" },
 		});
 	}
 	if (body !== undefined) nodes.push(body);
