@@ -31,8 +31,6 @@ const props = (node: NativeNode): Record<string, unknown> => (node.p ?? {}) as R
 const spanList = (value: unknown): Span[] => (Array.isArray(value) ? (value as Span[]) : []);
 const textSpans = (node: NativeNode): Span[] => spanList(props(node).spans);
 const headSpans = (node: NativeNode): Span[] => spanList(props(node).head);
-const kvItems = (node: NativeNode): { k: Span[]; v: Span[] }[] =>
-	Array.isArray(props(node).items) ? (props(node).items as { k: Span[]; v: Span[] }[]) : [];
 const previewLines = (node: NativeNode): number | undefined => {
 	const preview = props(node).preview;
 	if (typeof preview !== "object" || preview === null || !("lines" in preview)) return undefined;
@@ -176,20 +174,17 @@ describe("describeFabricResult", () => {
 		expect(props(unwrap(byKind(calls.c, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
-	test("a nested call is open: head, args, then its own output", () => {
+	test("a nested call is open, and its body is only its output", () => {
 		const section = unwrap(auditSections(view)[0], "first audit section");
 		expect(props(section).role).toBe("omp-fabric.call");
 		expect(props(section).collapsible).toBe(true);
 		expect(props(section).collapsed).toBe(false);
-		expect(kindList(section.c)).toEqual(["kv", "ansi"]);
+		expect(kindList(section.c)).toEqual(["ansi"]);
 		expect(section.key).toBe("call:0:omp.grep");
 		const head = headSpans(section);
 		expect(head.find(span => span.s === "strong")?.t).toBe("grep");
 		expect(joined(head.filter(span => span.s === "accent"))).toContain("/foo/ in src");
 		expect(joined(head.filter(span => span.s === "muted"))).toContain("24ms");
-		const keys = kvItems(unwrap(byKind(section.c, "kv"), "args kv")).map(item => joined(item.k));
-		expect(keys).toContain("pattern");
-		expect(keys).toContain("path");
 	});
 
 	test("a failed result says so in the head", () => {
@@ -235,12 +230,21 @@ describe("per-call rendering", () => {
 		expect(previewLines(ansi)).toBe(6);
 	});
 
-	test("object result becomes a json node with options.json, a json code node otherwise", () => {
+	test("a structured result is printed JSON, never the terminal's JSON tree", () => {
 		const read = unwrap(auditsOf(fabricDetails)[1], "read audit");
-		expect(byKind(auditSection(read, { json: true }).c, "json")).toBeDefined();
-		const code = unwrap(byKind(auditSection(read).c, "code"), "object result code node");
+		const section = auditSection(read);
+		expect(byKind(section.c, "json")).toBeUndefined();
+		const code = unwrap(byKind(section.c, "code"), "object result code node");
 		expect(props(code).lang).toBe("json");
+		expect(props(code).text).toContain('"lines": 40');
 		expect(previewLines(code)).toBe(6);
+	});
+
+	test("both output shapes carry the role the stylesheet rings", () => {
+		const text = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
+		expect(props(text).role).toBe("omp-fabric.output");
+		const json = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[1], "read audit")).c, "code"), "code node");
+		expect(props(json).role).toBe("omp-fabric.output");
 	});
 
 	test("a fromTrace audit with no result says the result was not retained", () => {

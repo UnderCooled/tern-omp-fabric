@@ -46,16 +46,22 @@ Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases
 │ const [a, b] = await Promise.all([…        ← the program, 8 lines; whole once the card opens
 │ ▸ calls                                    ← open: phases, then one block per call
 │     [discover] [report]
-│     grep  /foo/ in src · 24ms              ← that call, its arguments, its own output
-│       pattern foo · path src
-│       src/a.ts:12: foo
-│     mcp.do_thing  deploy · failed · 3.1s
-│       connection refused
+│     grep /foo/ in src · 24ms               ← the call, then only its own output
+│     ┌ src/a.ts:12: foo
+│     └ …
+│     deploy · failed · 3.1s
+│     ┌ connection refused
+│     └ …
 ```
 
 Every output in the card is a call's own: `audit.result` from fabric's audit trail, rendered under the
-call it belongs to, so two calls never share one body. The text fabric returns for the program as
-a whole — its `logs` plus the returned value, one blob with no call attribution — is not drawn.
+call it belongs to, so two calls never share one body. The output keeps its terminal form — text
+as `ansi`, a structured result as printed JSON — never the terminal's unfolding JSON tree, which is
+data rather than output. The text fabric returns for the program as a whole — its `logs` plus the
+returned value, one blob with no call attribution — is not drawn.
+
+A call's arguments stay out of the body: the head already names the call (`grep /foo/ in src · 24ms`),
+so the space under it belongs to what came back.
 
 The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
 under) beside the counted facts, so the body has no trailing status line.
@@ -83,9 +89,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, clamped to eight lines.
-- Each nested call is its own block, open by default: its head, its arguments and the output fabric
-  recorded for it (`audit.result`), so two calls never share one body. Each row folds away on its
-  own head when a program made many calls.
+- Each nested call is its own block, open by default: its head and the output fabric recorded for
+  it (`audit.result`), so two calls never share one body. Each row folds away on its own head when a
+  program made many calls, and the output is what the sheet rings.
 - The program's own returned text is not drawn. fabric hands it over as one blob — its `logs` and
   the returned value joined, with no attribution to a call — which is exactly the merged output
   this card used to show. What a call produced is read from its own audit instead.

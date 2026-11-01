@@ -55,8 +55,6 @@ export type DescribeOptions = {
 	isPartial?: boolean;
 	argsComplete?: boolean;
 	executionStarted?: boolean;
-	/** The terminal says it draws the `json` kind. */
-	json?: boolean;
 	media?: boolean;
 	elapsedMs?: number;
 	cancelled?: boolean;
@@ -68,8 +66,6 @@ const PROGRAM_PREVIEW_LINES = 8;
 const AUDIT_RESULT_LINES = 6;
 const AUDITS_COLLAPSED = 8;
 const AUDITS_EXPANDED = 30;
-const ARG_ENTRIES = 6;
-const ARG_VALUE_CHARS = 120;
 const DETAIL_CHARS = 72;
 
 const span = (t: string, s?: string): Span => (s === undefined ? { t } : { t, s });
@@ -192,27 +188,6 @@ function callDetail(audit: FabricAudit): string | undefined {
 	return undefined;
 }
 
-function scalarText(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const flat = value.replace(/\s+/g, " ").trim();
-		return flat === "" ? undefined : cut(flat, ARG_VALUE_CHARS);
-	}
-	if (typeof value === "number" || typeof value === "boolean") return String(value);
-	return undefined;
-}
-
-/** The scalars of one call's arguments; objects and arrays stay in its own result view. */
-function argumentItems(args: Record<string, unknown> | undefined): { k: Span[]; v: Span[] }[] {
-	const items: { k: Span[]; v: Span[] }[] = [];
-	for (const [key, value] of Object.entries(args ?? {})) {
-		if (items.length >= ARG_ENTRIES) break;
-		const shown = scalarText(value);
-		if (shown === undefined) continue;
-		items.push({ k: [span(key, "muted")], v: [span(shown, "mono")] });
-	}
-	return items;
-}
-
 function jsonSafe(value: unknown): string | undefined {
 	try {
 		return JSON.stringify(value, null, 2) ?? undefined;
@@ -221,23 +196,42 @@ function jsonSafe(value: unknown): string | undefined {
 	}
 }
 
-/** One nested call's own output: a terminal for text, a tree for structured data. */
-function resultNode(audit: FabricAudit, options: DescribeOptions): NativeChild | undefined {
+/**
+ * One call's output, as output rather than as data: text for text, printed JSON
+ * for a structured result -- never the terminal's JSON tree, which unfolds into
+ * a form that is not the output and cannot be framed. The role is what the
+ * stylesheet rings.
+ */
+function resultNode(audit: FabricAudit): NativeChild | undefined {
 	const result = audit.result;
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
 	}
 	if (typeof result === "string") {
 		if (result.trim() === "") return undefined;
-		return { k: "ansi", p: { text: result, preview: { lines: AUDIT_RESULT_LINES } } };
+		return {
+			k: "ansi",
+			key: "output",
+			p: { text: result, preview: { lines: AUDIT_RESULT_LINES }, role: "omp-fabric.output" },
+		};
 	}
-	if (options.json === true) return { k: "json", p: { value: result } };
 	const encoded = jsonSafe(result);
 	if (encoded === undefined) return muted("result not shown");
-	return { k: "code", p: { text: encoded, lang: "json", preview: { lines: AUDIT_RESULT_LINES } } };
+	return {
+		k: "code",
+		key: "output",
+		p: {
+			text: encoded,
+			lang: "json",
+			preview: { lines: AUDIT_RESULT_LINES },
+			role: "omp-fabric.output",
+			actions: COPY_ACTION,
+			title: "Click the code to copy the output",
+		},
+	};
 }
 
-function auditSection(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild {
+function auditSection(audit: FabricAudit, index: number): NativeChild {
 	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
 	const label = coreToolName(audit) ?? raw;
 	const head: Span[] = [span(label === "" ? "call" : label, "strong")];
@@ -250,16 +244,14 @@ function auditSection(audit: FabricAudit, index: number, options: DescribeOption
 	if (audit.success === false) head.push(span(" · failed", "error"));
 
 	const children: NativeChild[] = [];
-	const items = argumentItems(audit.args);
-	if (items.length > 0) children.push({ k: "kv", p: { items } });
-	const body = resultNode(audit, options);
+	const body = resultNode(audit);
 	if (body !== undefined) children.push(body);
 	if (audit.success === false && audit.error) {
 		children.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
 	}
 	if (audit.resultTruncated === true) children.push(muted("truncated"));
-	// The call's own output is the only output: it sits open under its head, with
-	// its arguments, and the head folds it away when the list gets long.
+	// The call's own output is the only output. The head names the call and folds
+	// it away when a program made many of them; the arguments stay out of the way.
 	return {
 		k: "section",
 		key: `call:${index}:${audit.ref}`,
@@ -334,7 +326,7 @@ function callsSection(audits: FabricAudit[], phases: string[], options: Describe
 	const shown = audits.slice(0, limit);
 	for (let index = 0; index < shown.length; index += 1) {
 		const audit = shown[index];
-		if (audit !== undefined) children.push(auditSection(audit, index, options));
+		if (audit !== undefined) children.push(auditSection(audit, index));
 	}
 	if (audits.length > shown.length) {
 		children.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));

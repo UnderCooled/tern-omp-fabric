@@ -160,6 +160,17 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, eighth pass (outputs only, drawn as output)
+
+| Ask | Change |
+| --- | --- |
+| drop the audit body | `argumentItems`, `scalarText`, `ARG_ENTRIES` and `ARG_VALUE_CHARS` are gone; `auditSection` renders only `resultNode` (plus an error line and a truncation note). The head still names the call. |
+| render the output as output, not as data | `resultNode` no longer branches on `options.json`: text stays `ansi`, a structured result prints as `code lang=json`. The `json` tree kind is never used, so the field left `DescribeOptions`. |
+| so the output can be framed | both output nodes carry `role = "omp-fabric.output"`; the sheet rings that role and the program's. |
+
+Verification: `bun test` 30 pass / 0 fail, `bun run typecheck` clean, smoke prints per call
+`head + [ansi]` / `head + [code json]`, both with the output role; `tern plugin reload` exits 0.
+
 ## Revision 2026-11-01, seventh pass (audit output only, rings back to a border)
 
 | Ask | Change |

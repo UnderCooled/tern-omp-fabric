@@ -10,34 +10,33 @@
  * so the sheet follows the user's theme.
  */
 
-/* The program is a code block: give it a ring so it reads as its own object at
-   a glance. */
-[data-role="omp-fabric.program"] {
+/* The program, and each call's output: ringed, so each reads as its own object. */
+[data-role="omp-fabric.program"],
+[data-role="omp-fabric.output"] {
 	border: 1px solid var(--l1);
 	border-radius: 8px;
 	padding: 4px 10px;
 	margin: 6px 0;
 }
 
-/* The nested calls: indented, no ring. */
+/* The calls list: indented, no ring of its own. */
 [data-role="omp-fabric.calls"] {
-	padding-left: 6px;
+	padding-left: 2px;
 	margin: 4px 0;
 }
 
-/* A call's own output sits under its row, with air above it. */
+/* A call: its head, then the ringed output under it. */
 [data-role="omp-fabric.call"] {
-	padding: 2px 0 4px 6px;
+	padding: 2px 0 2px 6px;
 }
 
 [data-role="omp-fabric.call"] + [data-role="omp-fabric.call"] {
 	margin-top: 6px;
 }
 
-/* No hairlines: the head facts, the ring and the call rows already separate the
-   parts. Tern puts .sf-tool-hr on the child element itself, so nodes carrying one
-   of our own roles are left alone -- a border-top of 0 there would take a ring
-   edge with it. */
+/* No hairlines: the head facts, the rings and the call heads separate the parts.
+   Tern puts .sf-tool-hr on the child element itself, so nodes carrying one of our
+   own roles are left alone -- a border-top of 0 there would take a ring edge with it. */
 [data-role="omp.tool.fabric_exec"] .sf-tool-hr:not([data-role^="omp-fabric."]) {
 	border-top: 0;
 }
