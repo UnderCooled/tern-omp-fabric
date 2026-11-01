@@ -160,6 +160,21 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twentieth pass (diff fallbacks, and honesty about caps)
+
+Some edit blocks showed no diff. Every shape reachable from this machine reproduced fine (single,
+multi-line, two-hunk, replace-all, 8 KB diff, two edits of one file), so the renderer now covers the
+remaining shapes instead of assuming one:
+
+| Case | Behaviour |
+| --- | --- |
+| `details.diff` present | parsed as before. |
+| diff missing, `oldText`/`newText` present | `diffFromTexts` rebuilds one hunk (common head/tail, 3 context lines). |
+| `diff` at the top level of the result | accepted (`editDiff` reads `result.details` else `result`). |
+| result is fabric's own `{fabricTruncated, originalChars}` | a muted note, not a JSON paste. |
+
+`bun test` 40 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, nineteenth pass (edits render as diffs)
 
 An `omp.edit` result is `{ ok, output, details }`: `output` is the post-edit excerpt with line numbers,

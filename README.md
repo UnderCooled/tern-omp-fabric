@@ -99,7 +99,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   without a click. Two calls never share a body, and the output is what the sheet rings.
 - An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed
   into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
-  rendering instead of a monospaced paste of the post-edit excerpt.
+  rendering instead of a monospaced paste of the post-edit excerpt. When that field did not survive
+  fabric's own per-audit cap, the diff is rebuilt from `details.oldText`/`newText` instead; when the whole result
+  was capped, the block says so rather than pasting a slice of JSON.
 - Any other call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
   printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12

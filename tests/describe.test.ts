@@ -352,6 +352,53 @@ describe("an edit answers with a diff", () => {
 		expect(hunks[1]?.lines).toEqual([" z", "-y", "+Y"]);
 	});
 
+	test("without details.diff the two texts still give a diff", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						audits: [
+							{
+								...editAudit,
+								result: {
+									output: "[src/a.ts]\n1:alpha\n2:BETA\n3:gamma\n",
+									details: { path: "src/a.ts", oldText: "alpha\nbeta\ngamma", newText: "alpha\nBETA\ngamma" },
+								},
+							},
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"synthesised view",
+		);
+		const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff node");
+		expect(props(diff).hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
+	});
+
+	test("a result fabric itself truncated says so instead of pasting JSON", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: { audits: [{ ...editAudit, result: { fabricTruncated: true, originalChars: 90000 } }] },
+				},
+				options,
+				fabricCallArgs,
+			),
+			"truncated view",
+		);
+		// Nothing to fold: the note is what the call's block shows.
+		expect(byKey(view.body, "output:0")).toBeUndefined();
+		const note = unwrap(
+			nodes(view.body).find(node => joined(textSpans(node)).includes("truncated by fabric")),
+			"truncation note",
+		);
+		expect(joined(textSpans(note))).toBe("result truncated by fabric (90000 chars)");
+	});
+
 	test("a diff with no changed line falls back to the text", () => {
 		const view = unwrap(
 			describeFabricResult(

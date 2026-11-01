@@ -257,15 +257,59 @@ function parseOmpDiff(raw: string): DiffHunk[] | undefined {
 	return changed.length === 0 ? undefined : changed;
 }
 
-/** The diff an edit answered with: `details.diff` of its result envelope. */
+/** Three lines of context on each side, as every diff reader expects. */
+const DIFF_CONTEXT = 3;
+
+/**
+ * A diff built from the two texts when the envelope's own diff did not survive
+ * (a preview or a cap can drop the field): the common head and tail are found,
+ * the middle is one removal run and one addition run.
+ */
+function diffFromTexts(oldText: string, newText: string): DiffHunk[] | undefined {
+	const oldLines = oldText.replace(/\n+$/, "").split("\n");
+	const newLines = newText.replace(/\n+$/, "").split("\n");
+	let head = 0;
+	while (head < oldLines.length && head < newLines.length && oldLines[head] === newLines[head]) head += 1;
+	let tail = 0;
+	while (
+		tail < oldLines.length - head &&
+		tail < newLines.length - head &&
+		oldLines[oldLines.length - 1 - tail] === newLines[newLines.length - 1 - tail]
+	) {
+		tail += 1;
+	}
+	const removed = oldLines.slice(head, oldLines.length - tail);
+	const added = newLines.slice(head, newLines.length - tail);
+	if (removed.length === 0 && added.length === 0) return undefined;
+	const contextBefore = Math.max(0, head - DIFF_CONTEXT);
+	const lines = [
+		...oldLines.slice(contextBefore, head).map(line => " " + line),
+		...removed.map(line => "-" + line),
+		...added.map(line => "+" + line),
+		...oldLines.slice(oldLines.length - tail, Math.min(oldLines.length, oldLines.length - tail + DIFF_CONTEXT)).map(
+			line => " " + line,
+		),
+	];
+	return [{ oldStart: contextBefore + 1, newStart: contextBefore + 1, lines }];
+}
+
+/**
+ * The diff an edit answered with: `details.diff` (omp's `<marker><line>|text`
+ * rows) when it survived, else one built from `details.oldText`/`newText`, so an
+ * edit never falls back to a plain excerpt just because a field was capped away.
+ */
 function editDiff(result: unknown): { hunks: DiffHunk[]; path?: string } | undefined {
-	if (!isRecord(result) || !isRecord(result.details)) return undefined;
-	const raw = result.details.diff;
-	if (typeof raw !== "string") return undefined;
-	const hunks = parseOmpDiff(raw);
-	if (hunks === undefined) return undefined;
-	const path = typeof result.details.path === "string" ? result.details.path : undefined;
-	return path === undefined ? { hunks } : { hunks, path };
+	if (!isRecord(result)) return undefined;
+	const details = isRecord(result.details) ? result.details : result;
+	const raw = typeof details.diff === "string" ? details.diff : undefined;
+	const hunks = raw === undefined ? undefined : parseOmpDiff(raw);
+	const oldText = typeof details.oldText === "string" ? details.oldText : undefined;
+	const newText = typeof details.newText === "string" ? details.newText : undefined;
+	const resolved =
+		hunks ?? (oldText !== undefined && newText !== undefined ? diffFromTexts(oldText, newText) : undefined);
+	if (resolved === undefined) return undefined;
+	const path = typeof details.path === "string" ? details.path : undefined;
+	return path === undefined ? { hunks: resolved } : { hunks: resolved, path };
 }
 
 /** What the call ran, as the head names it: `grep`, `read`, `bash`. */
@@ -297,6 +341,12 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 	const result = audit.result;
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
+	}
+	// fabric caps what it keeps per audit; when the cap hit, say so instead of
+	// pasting a slice of JSON into the fold.
+	if (isRecord(result) && result.fabricTruncated === true) {
+		const size = typeof result.originalChars === "number" ? result.originalChars + " chars" : "too large";
+		return muted("result truncated by fabric (" + size + ")");
 	}
 	// An edit answers with a diff: Tern draws that as a diff, not as a block of text.
 	const diff = editDiff(result);
