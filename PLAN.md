@@ -160,6 +160,19 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twenty-second pass (display is per tool)
+
+fabric exposes 148 actions in this session (`tools.list`): `omp` 6 (read, bash, edit, write, grep, find),
+`extensions` 61, `agents` 40, `mesh` 8, `state` 7, `schema` 5, `components` 4, `mcp` 4, `compact`/`image`/`memory` 3 each,
+`codemap`/`judgment` 2. Only the `omp` set is stable across sessions.
+
+`TOOL_DISPLAY` + `displayFor`: a per-tool rule of `{ fold, fact }`, keyed by the tool label. `read` and `write`
+have `fold: false` — no output block, a `3 lines` / `42 bytes` fact on the call line instead. Everything else
+falls back to the generic fold; `edit` still picks the diff first.
+
+`bun test` 43 pass / 0 fail, `bun run typecheck` clean; smoke: read → `read src/a.ts · 9ms 3 lines` with no
+fold, grep → line + fold.
+
 ## Revision 2026-11-01, twenty-first pass (no fold for a call that printed nothing)
 
 `(no output)` is the tool saying it printed nothing, so it does not deserve a fold: `resultNode` returns

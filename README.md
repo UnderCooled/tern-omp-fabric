@@ -104,6 +104,10 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   rendering instead of a monospaced paste of the post-edit excerpt. When that field did not survive
   fabric's own per-audit cap, the diff is rebuilt from `details.oldText`/`newText` instead; when the whole result
   was capped, the block says so rather than pasting a slice of JSON.
+- Display is per tool. `read` and `write` carry their fact on the call line — `3 lines`, `42 bytes` — and
+  draw no output at all: a file's own text is data, not something anyone reads back in a
+  transcript. Everything else keeps its fold, and `edit` gets the diff. The table lives in `TOOL_DISPLAY`
+  in `src/describe.ts` and falls back to the generic fold for a tool it does not name.
 - Any other call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
   printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12

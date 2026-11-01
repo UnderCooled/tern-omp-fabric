@@ -157,18 +157,10 @@ describe("describeFabricResult", () => {
 	});
 
 	test("body: the program fold, the phase row, then each call with its output", () => {
-		expect(kindList(view.body)).toEqual([
-			"section",
-			"row",
-			"text",
-			"section",
-			"text",
-			"section",
-			"text",
-			"text",
-		]);
+		// The read call has no fold: a file's own text is not output a person reads.
+		expect(kindList(view.body)).toEqual(["section", "row", "text", "section", "text", "text", "text"]);
 		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(3);
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(2);
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
 		expect(props(unwrap(byKind(view.body, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
@@ -262,6 +254,38 @@ describe("when a call shows its output", () => {
 		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }).body, "output:0")).toBeDefined();
 	});
 
+	test("a read says how many lines it returned, with no fold", () => {
+		const view = render({
+			ref: "omp.read",
+			tool: "read",
+			success: true,
+			args: { path: "src/a.ts" },
+			result: "one\ntwo\nthree\n",
+			startedAt: 0,
+			endedAt: 12,
+		});
+		expect(byKey(view.body, "output:0")).toBeUndefined();
+		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		const spans = textSpans(line);
+		expect(spans[spans.length - 1]).toEqual({ t: "3 lines", s: "muted" });
+	});
+
+	test("a write says how many bytes it took, with no fold", () => {
+		const view = render({
+			ref: "omp.write",
+			tool: "write",
+			success: true,
+			args: { path: "src/a.ts" },
+			result: "Successfully wrote 128 bytes to src/a.ts",
+			startedAt: 0,
+			endedAt: 12,
+		});
+		expect(byKey(view.body, "output:0")).toBeUndefined();
+		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		const spans = textSpans(line);
+		expect(spans[spans.length - 1]).toEqual({ t: "128 bytes", s: "muted" });
+	});
+
 	test("a call that printed nothing says so on its line, with no fold", () => {
 		for (const result of ["(no output)", "   "]) {
 			const view = render({ ...slowAudit, result, endedAt: 9000 });
@@ -277,7 +301,7 @@ describe("when a call shows its output", () => {
 	});
 
 	test("expanding the card opens every fold", () => {
-		const view = render(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
+		const view = render({ ...slowAudit, endedAt: 10 }, { expanded: true });
 		expect(props(unwrap(byKey(view.body, "program"), "program fold")).collapsed).toBe(false);
 		expect(props(unwrap(byKey(view.body, "output:0"), "output fold")).collapsed).toBe(false);
 	});
@@ -300,7 +324,9 @@ describe("how a call's output is drawn", () => {
 	});
 
 	test("a structured result is terminal text too, never the JSON viewer", () => {
-		const text = String(outputText(unwrap(auditsOf(fabricDetails)[1], "read audit")));
+		const text = String(
+			outputText({ ...slowAudit, result: { lines: 40, truncated: false } }),
+		);
 		expect(text).toContain('"lines": 40');
 	});
 

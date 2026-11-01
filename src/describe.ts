@@ -337,7 +337,12 @@ function callHead(audit: FabricAudit): Span[] {
  * clamp and unfold independently -- its preview button opens the enclosing
  * disclosure -- so each block is a disclosure of its own.
  */
-function resultNode(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild | undefined {
+function resultNode(
+	audit: FabricAudit,
+	index: number,
+	options: DescribeOptions,
+	display: ToolDisplay,
+): NativeChild | undefined {
 	const result = audit.result;
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
@@ -355,6 +360,8 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 	const flat = text?.trim();
 	// "(no output)" is the tool saying it printed nothing: not a block worth folding.
 	if (flat === "" || flat === NO_OUTPUT) return undefined;
+	// A tool whose result a person never reads (a file's text) says so on its line.
+	if (!display.fold) return undefined;
 	const lines =
 		diff === undefined ? (text ?? "").split("\n").length : diff.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
 	return {
@@ -389,6 +396,39 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 const NO_OUTPUT = "(no output)";
 
 /**
+ * How one tool's result is shown. `fold: false` means the output is data a person
+ * does not read back in a transcript (a file's own text), so the call line carries
+ * the fact instead and no fold is drawn.
+ */
+type ToolDisplay = {
+	fold: boolean;
+	/** A short fact for the call line, from the result as text. */
+	fact?: (text: string) => string | undefined;
+};
+
+const countTextLines = (text: string): string =>
+	countLabel(text.replace(/\n+$/, "").split("\n").length, "line");
+
+/** omp core tools, whose results differ enough to deserve their own line. */
+const TOOL_DISPLAY: Record<string, ToolDisplay> = {
+	read: { fold: false, fact: countTextLines },
+	write: {
+		fold: false,
+		fact: text => {
+			const bytes = /(\d+)\s+bytes/.exec(text);
+			return bytes === null ? undefined : bytes[1] + " bytes";
+		},
+	},
+};
+
+const DEFAULT_DISPLAY: ToolDisplay = { fold: true };
+
+/** The display rule for a call: its tool's, else the generic fold. */
+function displayFor(audit: FabricAudit): ToolDisplay {
+	return TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? DEFAULT_DISPLAY;
+}
+
+/**
  * One call: its line, then its output in a fold of its own. Every call that
  * returned something gets that fold — it is one row while folded, so there is
  * nothing to spare by hiding it, and a gap in the column only makes the reader
@@ -396,9 +436,15 @@ const NO_OUTPUT = "(no output)";
  * instead, where the eye already is.
  */
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
-	const body = resultNode(audit, index, options);
+	const display = displayFor(audit);
+	const body = resultNode(audit, index, options, display);
 	const head = callHead(audit);
-	if (body === undefined) head.push(span(" ", "muted"), span(NO_OUTPUT, "warning strong"));
+	if (body === undefined) {
+		const factOf = display.fact;
+		const text = factOf === undefined ? undefined : resultText(audit.result);
+		const fact = factOf === undefined || text === undefined ? undefined : factOf(text);
+		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
+	}
 	const nodes: NativeChild[] = [
 		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: head, role: "omp-fabric.call" } },
 	];
