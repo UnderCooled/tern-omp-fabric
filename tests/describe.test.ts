@@ -226,6 +226,13 @@ describe("when a call shows its output", () => {
 		);
 	}
 
+	/** The last span of a call's own line: the fact it carries instead of a fold. */
+	function lineFact(view: NativeToolView): Span | undefined {
+		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		const spans = textSpans(line);
+		return spans[spans.length - 1];
+	}
+
 	test("a slow call gets an output fold that starts open", () => {
 		const view = render(slowAudit);
 		const output = unwrap(byKey(view.body, "output:0"), "output fold");
@@ -254,6 +261,27 @@ describe("when a call shows its output", () => {
 		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }).body, "output:0")).toBeDefined();
 	});
 
+	test("a bash command is a shell code block of its own, and leaves the line", () => {
+		const view = render({
+			ref: "omp.bash",
+			tool: "bash",
+			success: true,
+			args: { command: "bun test 2>&1 | tail -4" },
+			result: "43 pass",
+			startedAt: 0,
+			endedAt: 40,
+		});
+		const command = unwrap(byKey(view.body, "call:0:command"), "command block");
+		expect(command.k).toBe("code");
+		expect(props(command)).toEqual({
+			text: "bun test 2>&1 | tail -4",
+			lang: "bash",
+			role: "omp-fabric.command",
+		});
+		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		expect(joined(textSpans(line))).toBe("bash · 40ms");
+	});
+
 	test("a read says how many lines it returned, with no fold", () => {
 		const view = render({
 			ref: "omp.read",
@@ -265,9 +293,7 @@ describe("when a call shows its output", () => {
 			endedAt: 12,
 		});
 		expect(byKey(view.body, "output:0")).toBeUndefined();
-		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
-		const spans = textSpans(line);
-		expect(spans[spans.length - 1]).toEqual({ t: "3 lines", s: "muted" });
+		expect(lineFact(view)).toEqual({ t: "3 lines", s: "muted" });
 	});
 
 	test("a write says how many bytes it took, with no fold", () => {
@@ -281,22 +307,14 @@ describe("when a call shows its output", () => {
 			endedAt: 12,
 		});
 		expect(byKey(view.body, "output:0")).toBeUndefined();
-		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
-		const spans = textSpans(line);
-		expect(spans[spans.length - 1]).toEqual({ t: "128 bytes", s: "muted" });
+		expect(lineFact(view)).toEqual({ t: "128 bytes", s: "muted" });
 	});
 
 	test("a call that printed nothing says so on its line, with no fold", () => {
 		for (const result of ["(no output)", "   "]) {
 			const view = render({ ...slowAudit, result, endedAt: 9000 });
 			expect(byKey(view.body, "output:0")).toBeUndefined();
-			const line = unwrap(
-				nodes(view.body).find(node => props(node).role === "omp-fabric.call"),
-				"call line",
-			);
-			const spans = textSpans(line);
-			const marker = unwrap(spans[spans.length - 1], "the marker span");
-			expect(marker).toEqual({ t: "(no output)", s: "warning strong" });
+			expect(lineFact(view)).toEqual({ t: "(no output)", s: "warning strong" });
 		}
 	});
 

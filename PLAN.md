@@ -160,18 +160,32 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twenty-third pass (a bash command is a code block)
+
+`bashCommand` takes `args.command` whole for a bash call; `callBlock` drops a `code` node with
+`lang: "bash"` and role `omp-fabric.command` right after the call line, and `callHead` no longer puts a
+one-line `$ …` copy of it in the line. Nothing collapses it: the block is the call's subject, not a
+detail.
+
+`bun test` 44 pass / 0 fail, `bun run typecheck` clean, `oxlint` exit 0; smoke: a bash audit renders
+`bash · 41ms`, then the command as `code[bash]`, then the output fold.
+
 ## Revision 2026-11-01, twenty-second pass (display is per tool)
 
 fabric exposes 148 actions in this session (`tools.list`): `omp` 6 (read, bash, edit, write, grep, find),
 `extensions` 61, `agents` 40, `mesh` 8, `state` 7, `schema` 5, `components` 4, `mcp` 4, `compact`/`image`/`memory` 3 each,
 `codemap`/`judgment` 2. Only the `omp` set is stable across sessions.
 
-`TOOL_DISPLAY` + `displayFor`: a per-tool rule of `{ fold, fact }`, keyed by the tool label. `read` and `write`
+`TOOL_DISPLAY` + `headFact`: a per-tool rule of `{ fold, fact }`, keyed by the tool label. `read` and `write`
 have `fold: false` — no output block, a `3 lines` / `42 bytes` fact on the call line instead. Everything else
 falls back to the generic fold; `edit` still picks the diff first.
 
 `bun test` 43 pass / 0 fail, `bun run typecheck` clean; smoke: read → `read src/a.ts · 9ms 3 lines` with no
 fold, grep → line + fold.
+
+Simplification pass over these lines: `resultNode` → `outputNode` with a `fold: boolean` instead of the whole
+rule, the one-use `displayFor` inlined, `countTextLines` trimmed instead of the regex, and `headFact` now returns
+undefined for `(no output)` so a read prints that marker rather than `1 line`.
 
 ## Revision 2026-11-01, twenty-first pass (no fold for a call that printed nothing)
 

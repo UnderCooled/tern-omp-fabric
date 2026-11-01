@@ -323,7 +323,8 @@ function callLabel(audit: FabricAudit): string {
 function callHead(audit: FabricAudit): Span[] {
 	const label = callLabel(audit);
 	const head: Span[] = [span(label, "strong")];
-	const detail = callDetail(audit);
+	// A bash command is a program, not a name: it goes in a code block of its own.
+	const detail = label === "bash" ? undefined : callDetail(audit);
 	if (detail !== undefined) head.push(span(" "), span(detail, "accent"));
 	const took = formatDuration(callDuration(audit));
 	if (took !== undefined) head.push(span(` · ${took}`, "muted"));
@@ -337,11 +338,11 @@ function callHead(audit: FabricAudit): Span[] {
  * clamp and unfold independently -- its preview button opens the enclosing
  * disclosure -- so each block is a disclosure of its own.
  */
-function resultNode(
+function outputNode(
 	audit: FabricAudit,
 	index: number,
 	options: DescribeOptions,
-	display: ToolDisplay,
+	fold: boolean,
 ): NativeChild | undefined {
 	const result = audit.result;
 	if (result === undefined || result === null) {
@@ -361,7 +362,7 @@ function resultNode(
 	// "(no output)" is the tool saying it printed nothing: not a block worth folding.
 	if (flat === "" || flat === NO_OUTPUT) return undefined;
 	// A tool whose result a person never reads (a file's text) says so on its line.
-	if (!display.fold) return undefined;
+	if (!fold) return undefined;
 	const lines =
 		diff === undefined ? (text ?? "").split("\n").length : diff.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
 	return {
@@ -406,8 +407,7 @@ type ToolDisplay = {
 	fact?: (text: string) => string | undefined;
 };
 
-const countTextLines = (text: string): string =>
-	countLabel(text.replace(/\n+$/, "").split("\n").length, "line");
+const countTextLines = (text: string): string => countLabel(text.trim().split("\n").length, "line");
 
 /** omp core tools, whose results differ enough to deserve their own line. */
 const TOOL_DISPLAY: Record<string, ToolDisplay> = {
@@ -421,11 +421,20 @@ const TOOL_DISPLAY: Record<string, ToolDisplay> = {
 	},
 };
 
-const DEFAULT_DISPLAY: ToolDisplay = { fold: true };
+/** A bash call's whole command, for the code block that replaces the one-line label. */
+function bashCommand(audit: FabricAudit): string | undefined {
+	if (callLabel(audit) !== "bash") return undefined;
+	const command = audit.args?.command;
+	return typeof command === "string" && command.trim() !== "" ? command : undefined;
+}
 
-/** The display rule for a call: its tool's, else the generic fold. */
-function displayFor(audit: FabricAudit): ToolDisplay {
-	return TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? DEFAULT_DISPLAY;
+/** The fact a call's own rule puts on its line, for a result that has one. */
+function headFact(display: ToolDisplay, result: unknown): string | undefined {
+	const factOf = display.fact;
+	if (factOf === undefined) return undefined;
+	const text = resultText(result)?.trim();
+	if (text === undefined || text === "" || text === NO_OUTPUT) return undefined;
+	return factOf(text);
 }
 
 /**
@@ -436,18 +445,26 @@ function displayFor(audit: FabricAudit): ToolDisplay {
  * instead, where the eye already is.
  */
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
-	const display = displayFor(audit);
-	const body = resultNode(audit, index, options, display);
+	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
+	const body = outputNode(audit, index, options, display.fold);
 	const head = callHead(audit);
 	if (body === undefined) {
-		const factOf = display.fact;
-		const text = factOf === undefined ? undefined : resultText(audit.result);
-		const fact = factOf === undefined || text === undefined ? undefined : factOf(text);
+		const fact = headFact(display, audit.result);
 		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
 	}
 	const nodes: NativeChild[] = [
 		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: head, role: "omp-fabric.call" } },
 	];
+	// The command itself, whole and highlighted: a shell line cut into a tool
+	// label is unreadable the moment it has a pipe or a redirect in it.
+	const command = bashCommand(audit);
+	if (command !== undefined) {
+		nodes.push({
+			k: "code",
+			key: `call:${index}:command`,
+			p: { text: command, lang: "bash", role: "omp-fabric.command" },
+		});
+	}
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
 	if (audit.success === false && audit.error) {
