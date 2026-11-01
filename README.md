@@ -45,10 +45,11 @@ Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases
 │ (the model's description, when it sent one)
 │ ▸ program · 42 lines                       ← its own fold: open it to read the code
 │ [discover] [report]                        ← the phases
-│ grep /foo/ in src · 24ms                   ← a fast call: its line is all it needs
-│ build · 5.2s                               ← a slow one gets an output fold
-│ ▸ bash output · 12 lines                   ← named after its call
-│ deploy · failed · 3.1s                     ← a failure always gets one
+│ grep /foo/ in src · 24ms                   ← every call, its line…
+│ ▸ grep output · 12 lines                   ← …and its output, named and folded
+│ build · 5.2s
+│ ▸ bash output · 40 lines
+│ deploy · failed · 3.1s
 │ ▸ deploy output · 3 lines
 ```
 
@@ -66,8 +67,8 @@ so the space under it belongs to what came back.
 The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
 under) beside the counted facts, so the body has no trailing status line.
 
-Every block is a fold of its own: the program, and the output of any call that took two seconds or
-more or failed. A fold is one row until you open it — `program · 42 lines`, `bash output · 12 lines` — and
+Every block is a fold of its own: the program, and the output of every call that returned one. A
+fold is one row until you open it — `program · 42 lines`, `bash output · 12 lines` — and
 `ctrl+o` (`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
 block its own disclosure: the terminal's "N more lines" button always opens the enclosing one, so
 a block that shows a preview cannot also unfold by itself. The Tern plugin adds a palette row for
@@ -91,9 +92,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, in a fold of its own.
 - Each nested call is one line — what ran, its argument, how long — followed by the output fabric
-  recorded for it (`audit.result`) when the call took two seconds or more or failed. A fast call that
-  worked is just its line: it needs no output to be read. Two calls never share a body, and the
-  output is what the sheet rings.
+  recorded for it (`audit.result`), in a fold named after that call. Every call that returned something
+  gets one: the row costs a line, and a gap in the column reads as output that went missing. Two
+  calls never share a body, and the output is what the sheet rings.
 - A call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
   envelope's `output` field when the tool answers with one, its string when it returns text, its
   printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12

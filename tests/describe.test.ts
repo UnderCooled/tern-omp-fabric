@@ -147,9 +147,19 @@ describe("describeFabricResult", () => {
 		]);
 	});
 
-	test("body: the program fold, the phase row, one line per call", () => {
-		expect(kindList(view.body)).toEqual(["section", "row", "text", "text", "text", "text"]);
+	test("body: the program fold, the phase row, then each call with its output", () => {
+		expect(kindList(view.body)).toEqual([
+			"section",
+			"row",
+			"text",
+			"section",
+			"text",
+			"section",
+			"text",
+			"text",
+		]);
 		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(3);
+		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(2);
 		expect(props(unwrap(byKind(view.body, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
@@ -161,8 +171,10 @@ describe("describeFabricResult", () => {
 		expect(joined(spans.filter(span => span.s === "muted"))).toContain("24ms");
 	});
 
-	test("fast calls that worked show no output block", () => {
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(0);
+	test("every call that returned something has an output fold, folded", () => {
+		for (const output of withRole(view.body, "omp-fabric.output")) {
+			expect(props(output).collapsed).toBe(true);
+		}
 	});
 
 	test("a failing call still carries its message", () => {
@@ -232,8 +244,9 @@ describe("when a call shows its output", () => {
 		expect(props(ansi).preview).toBeUndefined();
 	});
 
-	test("a fast working call gets none", () => {
-		expect(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")).body, "output:0")).toBeUndefined();
+	test("a fast working call gets one too, and it starts folded", () => {
+		const output = unwrap(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")).body, "output:0"), "output fold");
+		expect(props(output).collapsed).toBe(true);
 	});
 
 	test("a failure gets one even when fast", () => {

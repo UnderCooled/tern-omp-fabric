@@ -209,9 +209,6 @@ function resultText(result: unknown): string | undefined {
 	return jsonSafe(result);
 }
 
-/** A call whose output is worth showing unfolded: two seconds is where a wait becomes a fact. */
-const SLOW_CALL_MS = 2000;
-
 function callDuration(audit: FabricAudit): number | undefined {
 	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
@@ -268,23 +265,19 @@ function resultNode(audit: FabricAudit, index: number, options: DescribeOptions)
 }
 
 /**
- * One call: its line, and — when it made the user wait two seconds or more, or
- * it failed — its output. A fast call that worked is just its line. Everything
- * here is a direct child of the card, because a preview inside a section would
- * give way and the terminal would stop drawing its own expand affordance.
+ * One call: its line, then its output in a fold of its own. Every call that
+ * returned something gets that fold — it is one row while folded, so there is
+ * nothing to spare by hiding it, and a gap in the column only makes the reader
+ * wonder what went missing.
  */
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
 	const nodes: NativeChild[] = [
 		{ k: "text", key: `call:${index}:${audit.ref}`, p: { spans: callHead(audit), role: "omp-fabric.call" } },
 	];
-	const slow = (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
-	const failed = audit.success === false;
-	if (options.expanded === true || slow || failed) {
-		const body = resultNode(audit, index, options);
-		if (body !== undefined) nodes.push(body);
-	}
+	const body = resultNode(audit, index, options);
+	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
-	if (failed && audit.error) {
+	if (audit.success === false && audit.error) {
 		nodes.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
 	}
 	return nodes;

@@ -160,6 +160,14 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, seventeenth pass (every call gets its output row)
+
+`SLOW_CALL_MS` and the "only if slow or failed" gate are gone. A fold is one row while collapsed, so
+hiding it saved nothing and left gaps that read as missing output. `callBlock` now always emits the
+`resultNode` fold when the call has a result; `expanded` only decides whether folds start open.
+
+`bun test` 34 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, sixteenth pass (output folds are named after their call)
 
 The tree was already per-call; the heads were not: two folds both read `output · N lines`, so a column
