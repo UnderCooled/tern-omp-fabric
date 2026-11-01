@@ -69,12 +69,12 @@ The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`,
 under) beside the counted facts, so the body has no trailing status line.
 
 A call's output stays folded unless the call made you wait: one that took two seconds or more
-opens with its first four lines and a `… N lines more` line, and a failed call always opens. The
-program is clamped to four lines. Opening the card with `ctrl+o` (`app.tools.expand`) opens every call and
-drops both clamps, exactly as a block behaves inside a folded disclosure. The `calls` section and each
-call head fold on their own too. The Tern plugin adds a palette row for the expand — **omp fabric:
-expand tool output** — so it is reachable without knowing the chord; it types `ctrl+o` into the
-focused omp pane.
+opens with its first four lines under a `… N lines more` row that opens the rest in place, and a
+failed call always opens. The program is clamped to four lines. Opening the card with `ctrl+o`
+(`app.tools.expand`) opens every call and drops both clamps, exactly as a block behaves inside a folded
+disclosure. The `calls` section, each call head and that `… more` row fold on their own too. The Tern
+plugin adds a palette row for the expand — **omp fabric: expand tool output** — so it is reachable
+without knowing the chord; it types `ctrl+o` into the focused omp pane.
 
 The ring around the program is this plugin's Tern sheet, not the node tree: the protocol gives
 each tool call exactly one frame and flattens anything framed inside its body

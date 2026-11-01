@@ -225,17 +225,19 @@ describe("per-call rendering", () => {
 		return unwrap(auditSections(view)[0], "audit section");
 	}
 
-	test("a slow call shows its first four lines and says how many it hid", () => {
+	test("a slow call shows its first four lines, and the rest opens in place", () => {
 		const section = auditSection(slowAudit);
 		expect(props(section).collapsed).toBe(false);
 		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
 		expect(props(ansi).text).toBe("line 1\nline 2\nline 3\nline 4");
-		const more = unwrap(
-			nodes(section.c).find(node => joined(textSpans(node)).includes("more")),
-			"the more line",
-		);
-		expect(textSpans(more)[0]?.s).toBe("muted");
-		expect(joined(textSpans(more))).toBe("… 2 lines more");
+		const more = unwrap(byKey(section.c, "output-more"), "the more section");
+		expect(more.k).toBe("section");
+		expect(props(more).collapsible).toBe(true);
+		expect(props(more).collapsed).toBe(true);
+		expect(joined(headSpans(more))).toBe("… 2 lines more");
+		const rest = unwrap(byKey(more.c, "output-rest"), "the rest");
+		expect(props(rest).text).toBe("line 5\nline 6");
+		expect(props(rest).role).toBe("omp-fabric.output");
 	});
 
 	test("a fast call hides its output but still carries it", () => {

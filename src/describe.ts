@@ -232,12 +232,31 @@ function resultNodes(audit: FabricAudit, lines: number): NativeChild[] {
 	if (text === undefined) return [muted("result not shown")];
 	if (text.trim() === "") return [];
 	const all = text.split("\n");
-	const shown = all.length <= lines ? text : all.slice(0, lines).join("\n");
-	const nodes: NativeChild[] = [
-		{ k: "ansi", key: "output", p: { text: shown, role: "omp-fabric.output" } },
+	if (all.length <= lines) {
+		return [{ k: "ansi", key: "output", p: { text, role: "omp-fabric.output" } }];
+	}
+	// The tail is a real disclosure, not a note that looks like one: opening it
+	// shows the rest in place.
+	return [
+		{ k: "ansi", key: "output", p: { text: all.slice(0, lines).join("\n"), role: "omp-fabric.output" } },
+		{
+			k: "section",
+			key: "output-more",
+			p: {
+				head: [span("… " + countLabel(all.length - lines, "line") + " more", "muted")],
+				role: "omp-fabric.output-more",
+				collapsible: true,
+				collapsed: true,
+			},
+			c: [
+				{
+					k: "ansi",
+					key: "output-rest",
+					p: { text: all.slice(lines).join("\n"), role: "omp-fabric.output" },
+				},
+			],
+		},
 	];
-	if (all.length > lines) nodes.push(muted("… " + countLabel(all.length - lines, "line") + " more"));
-	return nodes;
 }
 
 function auditSection(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild {

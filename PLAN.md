@@ -160,6 +160,14 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twelfth pass (the more row is a fold)
+
+The `… N lines more` under a slow call was muted text, so nothing opened it. `resultNodes` now emits a
+nested `section` (key `output-more`, role `omp-fabric.output-more`) holding the tail as `ansi`: opening
+it shows the rest in place. Sections nest; only `card`/`tool` children are flattened.
+
+`bun test` 34 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, eleventh pass (output folded unless the call was slow)
 
 `resultNode` became `resultNodes(audit, lines)`: it clamps the text itself (a `code`/`ansi` `preview`
