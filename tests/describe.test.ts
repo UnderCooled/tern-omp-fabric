@@ -48,7 +48,6 @@ const byKind = (children: readonly NativeChild[] | undefined, k: string): Native
 	nodes(children).find(node => node.k === k);
 const byKey = (children: readonly NativeChild[] | undefined, key: string): NativeNode | undefined =>
 	nodes(children).find(node => node.key === key);
-const codeOf = (parent: NativeNode): NativeNode => unwrap(byKind(parent.c, "code"), "the code node");
 const auditsOf = (details: FabricDetails): FabricAudit[] => details.audits ?? [];
 const toolHead = (view: NativeToolView): NativeToolHead => unwrap(view.tool, "tool head");
 
@@ -161,8 +160,10 @@ describe("describeFabricResult", () => {
 		expect(byKey(view.body, "foot")).toBeUndefined();
 	});
 
-	test("body order: program, calls, logs, output", () => {
-		expect(kindList(view.body)).toEqual(["code", "section", "section", "code"]);
+	test("body order: the program, then the calls that carry the output", () => {
+		expect(kindList(view.body)).toEqual(["code", "section"]);
+		expect(byKey(view.body, "output")).toBeUndefined();
+		expect(byKey(view.body, "logs")).toBeUndefined();
 	});
 
 	test("the calls section starts open, one level", () => {
@@ -175,10 +176,12 @@ describe("describeFabricResult", () => {
 		expect(props(unwrap(byKind(calls.c, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
-	test("a nested call folds, and its first row carries head, args and timing", () => {
+	test("a nested call is open: head, args, then its own output", () => {
 		const section = unwrap(auditSections(view)[0], "first audit section");
 		expect(props(section).role).toBe("omp-fabric.call");
-		expect(props(section).collapsed).toBe(true);
+		expect(props(section).collapsible).toBe(true);
+		expect(props(section).collapsed).toBe(false);
+		expect(kindList(section.c)).toEqual(["kv", "ansi"]);
 		expect(section.key).toBe("call:0:omp.grep");
 		const head = headSpans(section);
 		expect(head.find(span => span.s === "strong")?.t).toBe("grep");
@@ -187,37 +190,6 @@ describe("describeFabricResult", () => {
 		const keys = kvItems(unwrap(byKind(section.c, "kv"), "args kv")).map(item => joined(item.k));
 		expect(keys).toContain("pattern");
 		expect(keys).toContain("path");
-	});
-
-	test("the program's logs stay in a folded section", () => {
-		const logs = unwrap(byKey(view.body, "logs"), "logs section");
-		expect(props(logs).role).toBe("omp-fabric.logs");
-		expect(props(logs).collapsed).toBe(true);
-		expect(joined(headSpans(logs))).toBe("logs");
-		expect(props(codeOf(logs)).text).toBe("scanned: 3\ntodos:\n  - src/a.ts");
-	});
-
-	test("the returned value is a code block clamped to six lines", () => {
-		const output = unwrap(byKey(view.body, "output"), "output block");
-		expect(output.k).toBe("code");
-		expect(props(output).role).toBe("omp-fabric.output");
-		expect(previewLines(output)).toBe(6);
-		expect(props(output).text).toBe(OUTPUT_TEXT.split("\n").slice(3).join("\n"));
-		expect(props(output).lang).toBe("yaml");
-		expect(actionOf(output).click).toBe("copy");
-	});
-
-	test("without a value offset the whole result is one code block", () => {
-		const single = unwrap(
-			describeFabricResult(
-				{ content: [{ type: "text", text: OUTPUT_TEXT }], details: { audits: [] } },
-				settled,
-				fabricCallArgs,
-			),
-			"single-block view",
-		);
-		expect(byKey(single.body, "logs")).toBeUndefined();
-		expect(props(unwrap(byKey(single.body, "output"), "output block")).text).toBe(OUTPUT_TEXT);
 	});
 
 	test("a failed result says so in the head", () => {
@@ -342,13 +314,13 @@ describe("trace-only details", () => {
 		).toContain("ENOENT");
 	});
 
-	test("undefined details render program and output without throwing", () => {
+	test("undefined details render the program without throwing and without a body output", () => {
 		const bare = unwrap(
 			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs),
 			"no-details view",
 		);
 		expect(byKey(bare.body, "calls")).toBeUndefined();
 		expect(byKey(bare.body, "program")).toBeDefined();
-		expect(byKey(bare.body, "output")).toBeDefined();
+		expect(byKey(bare.body, "output")).toBeUndefined();
 	});
 });

@@ -160,6 +160,18 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, seventh pass (audit output only, rings back to a border)
+
+| Ask | Change |
+| --- | --- |
+| use `audit.result` as the output, drop the aggregate | `outputNodes`, `valueBlock`, `logsSection` and the `outputFormat*` fields are gone. The result card is `program` + `calls`; every output on it is a call's own `audit.result`, rendered under that call. |
+| each call shows its output | audit sections are `collapsed: false` (still collapsible). |
+| borders all gone again | the `box-shadow` ring does not paint on these nodes; back to `border: 1px solid var(--l1)`, with the hairline suppression guarded by `:not([data-role^="omp-fabric."])` so it cannot eat a ring edge (`.sf-tool-hr` lands on the child element itself). |
+
+Verification: `bun test` 29 pass / 0 fail, `bun run typecheck` clean, smoke prints `head facts + [program, calls]`
+with each `call:N` section open and `[kv, ansi]`/`[kv, text]` under it; `tern plugin reload` exits 0 with
+no sheet error. Whether the ring paints is the one thing left to the eye.
+
 ## Revision 2026-11-01, sixth pass (status in the head, one open level)
 
 | Ask | Change |

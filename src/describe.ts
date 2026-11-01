@@ -46,9 +46,6 @@ export type FabricDetails = {
 	success?: boolean;
 	error?: string;
 	progress?: string;
-	outputFormat?: "yaml" | "json";
-	outputFormatStartLine?: number;
-	outputFormatLines?: number;
 	phases?: string[];
 	audits?: FabricAudit[];
 };
@@ -65,9 +62,8 @@ export type DescribeOptions = {
 	cancelled?: boolean;
 };
 
-/** Lines a block keeps while the tool card is folded; the card's own expand shows the rest. */
+/** Lines the program keeps while the tool card is folded; the card's expand shows the rest. */
 const PROGRAM_PREVIEW_LINES = 8;
-const OUTPUT_PREVIEW_LINES = 6;
 /** Lines of one nested call's own output shown while collapsed. */
 const AUDIT_RESULT_LINES = 6;
 const AUDITS_COLLAPSED = 8;
@@ -262,11 +258,12 @@ function auditSection(audit: FabricAudit, index: number, options: DescribeOption
 		children.push(text([span(cut(firstLine(audit.error) || audit.error, 300), "error")]));
 	}
 	if (audit.resultTruncated === true) children.push(muted("truncated"));
-	// Folded: a nested call keeps its arguments and output behind its own head until opened.
+	// The call's own output is the only output: it sits open under its head, with
+	// its arguments, and the head folds it away when the list gets long.
 	return {
 		k: "section",
 		key: `call:${index}:${audit.ref}`,
-		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: true },
+		p: { head, role: "omp-fabric.call", collapsible: true, collapsed: false },
 		c: children,
 	};
 }
@@ -350,64 +347,7 @@ function callsSection(audits: FabricAudit[], phases: string[], options: Describe
 	};
 }
 
-/** Logs are diagnostics, not the answer: they stay folded. */
-function logsSection(logs: string): NativeChild {
-	return {
-		k: "section",
-		key: "logs",
-		p: { head: [span("logs", "muted")], role: "omp-fabric.logs", collapsible: true, collapsed: true },
-		c: [
-			{
-				k: "code",
-				key: "logs-code",
-				p: { text: logs, actions: COPY_ACTION, title: "Click the code to copy the logs" },
-			},
-		],
-	};
-}
 
-/** The returned value: clamped until the card is expanded, copied by a click. */
-function valueBlock(text: string, details: FabricDetails): NativeChild {
-	return codeBlock(
-		"output",
-		"omp-fabric.output",
-		text,
-		details.outputFormat,
-		OUTPUT_PREVIEW_LINES,
-		"Click the code to copy the output",
-	);
-}
-
-/**
- * The program's result as the model read it. fabric joins the program's logs and
- * the returned value into one text and says where the value starts
- * (outputFormatStartLine); splitting them keeps two different things out of one
- * block.
- */
-function outputNodes(content: unknown, details: FabricDetails): NativeChild[] {
-	const blocks = Array.isArray(content) ? content : [];
-	const output = blocks
-		.filter(
-			(block): block is { type: string; text: string } =>
-				isRecord(block) && block.type === "text" && typeof block.text === "string",
-		)
-		.map(block => block.text)
-		.join("\n")
-		.replace(/\r\n?/g, "\n")
-		.replace(/\n+$/, "");
-	if (output.trim() === "") return [];
-	const lines = output.split("\n");
-	const valueAt =
-		typeof details.outputFormatStartLine === "number" && details.outputFormatStartLine > 0
-			? details.outputFormatStartLine
-			: 0;
-	if (valueAt > 0 && valueAt < lines.length) {
-		const logs = lines.slice(0, valueAt).join("\n").replace(/\n+$/, "");
-		const value = lines.slice(valueAt).join("\n").replace(/\n+$/, "");
-		return [logsSection(logs), valueBlock(value, details)];
-	}
-	return [valueBlock(output, details)];
-}
 
 function phaseRow(phases: string[]): NativeChild {
 	return {
@@ -503,15 +443,10 @@ function readDetails(value: unknown): FabricDetails {
 	const error = typeof value.error === "string" ? value.error : typeof trace?.error === "string" ? trace.error : undefined;
 	const success =
 		typeof value.success === "boolean" ? value.success : outcome === undefined ? undefined : outcome === "succeeded";
-	const outputFormat =
-		value.outputFormat === "yaml" || value.outputFormat === "json" ? value.outputFormat : undefined;
 	return {
 		...(success !== undefined ? { success } : {}),
 		...(error !== undefined ? { error } : {}),
 		...(typeof value.progress === "string" ? { progress: value.progress } : {}),
-		...(outputFormat !== undefined ? { outputFormat } : {}),
-		...(typeof value.outputFormatStartLine === "number" ? { outputFormatStartLine: value.outputFormatStartLine } : {}),
-		...(typeof value.outputFormatLines === "number" ? { outputFormatLines: value.outputFormatLines } : {}),
 		phases: strings(value.phases) ?? strings(trace?.phases) ?? [],
 		audits: audits ?? operations ?? [],
 	};
@@ -545,8 +480,6 @@ export function describeFabricResult(
 	} else if (audits.length === 0 && details.progress !== undefined) {
 		body.push(muted(details.progress));
 	}
-
-	body.push(...outputNodes(result?.content, details));
 
 	return { tool: head(program, display, facts), body, preview: "children" };
 }

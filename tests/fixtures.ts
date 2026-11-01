@@ -41,8 +41,6 @@ export const fabricCallArgs: FabricExecArgs = {
 /** Rich details: two successful audits, one failing, two phases, YAML output. */
 export const fabricDetails: FabricDetails = {
 	success: true,
-	outputFormat: "yaml",
-	outputFormatStartLine: 3,
 	phases: ["scan", "report"],
 	audits: [
 		{
