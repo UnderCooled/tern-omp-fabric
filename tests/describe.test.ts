@@ -486,8 +486,14 @@ describe("an edit answers with a diff", () => {
 		expect(kindList(view.body)).toEqual(["section", "text"]);
 		expect(byKey(view.body, "output:0")).toBeUndefined();
 		const spans = textSpans(unwrap(nodes(view.body)[1], "call line"));
-		expect(spans[2]).toEqual({ t: "src/a.ts", s: "accent" });
-		expect(spans[2]).not.toHaveProperty("href");
+		// A relative path resolves against the directory omp runs in, so the whole line
+		// opens the file: label and path both carry the link.
+		expect(spans[0]).toEqual({ t: "edit", s: "strong", href: `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts` });
+		expect(spans[2]).toEqual({
+			t: "src/a.ts",
+			s: "accent",
+			href: `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts`,
+		});
 	});
 
 	test("an absolute path is the link Tern opens the file with", () => {

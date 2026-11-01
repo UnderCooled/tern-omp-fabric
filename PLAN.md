@@ -167,8 +167,9 @@ originalChars, preview}`: fabric replaces a details object serialising past 16 K
 text, cut at 15 900 chars. A prefix of a diff reads as the whole change, so those calls now draw no
 output block and no `(no output)` marker either — `cappedDetails` is what tells `outputNode` and
 `callBlock` apart, and the line keeps just the tool, the file and the duration. `fileHref` turns that
-file name into a `file://` link (absolute paths only, since a bare `src/a.ts` names no file), and Tern's
-routing hands the URL to its own file open. The `[README.md]`
+path into a `file://` URL — absolute as given, relative resolved against `process.cwd()` (the session's
+workspace: an audit carries no cwd) — and hangs it on both the label and the path span so the whole
+line is the target. Tern's routing hands the URL to its own file open. The `[README.md]`
 first line of an edit's `output` was never involved: nothing in the diff path reads `output`. A
 recovered-prefix renderer was tried and removed; measured on a real 34 570-char audit it produced 6
 of the change's rows, which is the misleading half-fact this rule avoids.

@@ -103,8 +103,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
   rendering instead of a monospaced paste of the post-edit excerpt. When fabric caps the details
   object itself, only a prefix of the diff survives, and a prefix reads as the whole change: that call
-  gets no output block and no marker, and its file name becomes a `file://` link, which Tern routes to
-  opening the file, so the change is one click away instead of half-shown. When only the diff field is
+  gets no output block and no marker, and its call line becomes a `file://` link — label and path both —
+  which Tern routes to opening the file, so the change is one click away instead of half-shown. A
+  relative path resolves against the workspace omp runs in. When only the diff field is
   missing, the change is rebuilt from `details.oldText`/`newText`; when the whole result was capped,
   the block says so rather than pasting a slice of JSON.
 - A bash call's command is a markdown fence of its own under the call line, so Tern draws what a

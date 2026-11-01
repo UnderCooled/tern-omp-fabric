@@ -300,11 +300,14 @@ function cappedDetails(result: unknown): boolean {
 
 /**
  * A path as the link Tern opens it with: its routing hands a `file://` URL to the
- * file itself. Only an absolute path is linked -- a bare `src/a.ts` names no file.
+ * file itself. A relative one resolves against the directory omp runs in, which is
+ * the session's workspace -- the audit carries no cwd of its own.
  */
 function fileHref(path: string): string | undefined {
-	if (!/^([A-Za-z]:[\\/]|[\\/]{2})/.test(path)) return undefined;
-	return "file:///" + path.replace(/\\/g, "/").replace(/^\/+/, "");
+	const trimmed = path.replace(/[\\/]+$/, "");
+	if (trimmed === "") return undefined;
+	const absolute = /^([A-Za-z]:[\\/]|[\\/]{2}|[\\/])/.test(trimmed) ? trimmed : `${process.cwd()}/${trimmed}`;
+	return "file:///" + absolute.replace(/\\/g, "/").replace(/^\/+/, "");
 }
 
 /**
@@ -343,6 +346,7 @@ function callHead(audit: FabricAudit): Span[] {
 		// the reader sees the change, so it opens the file instead.
 		const path = cappedDetails(audit.result) ? audit.args?.path : undefined;
 		const href = typeof path === "string" ? fileHref(path) : undefined;
+		if (href !== undefined) head[0] = { ...head[0]!, href };
 		head.push(span(" "), href === undefined ? span(detail, "accent") : { t: detail, s: "accent", href });
 	}
 	const took = formatDuration(callDuration(audit));
