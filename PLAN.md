@@ -160,6 +160,16 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, twenty-fourth pass (diff from a capped details)
+
+Half the `omp.edit` audits in this session's transcript carry `details` as `{fabricTruncated,
+originalChars, preview}`: fabric replaces a details object serialising past 16 KB with its own JSON
+text, cut at 15 900 chars. That text still starts with `{"diff":"…`, so `salvageDiff` reads the value
+out of it (unescaping, dropping the last row when the quote never closed) and `editDiff` uses those
+rows before falling back to `oldText`/`newText`. The `[README.md]` first line of an edit's `output` is
+not involved: nothing in the diff path reads `output`. Measured on a real 34 570-char audit: 6 rows,
+one hunk, instead of the plain excerpt the block showed before.
+
 ## Revision 2026-11-01, twenty-third pass (a bash command is a code block)
 
 `bashCommand` takes `args.command` whole for a bash call; `fencedCommand` wraps it in a fence longer

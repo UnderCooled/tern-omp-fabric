@@ -102,8 +102,10 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 - An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed
   into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
   rendering instead of a monospaced paste of the post-edit excerpt. When that field did not survive
-  fabric's own per-audit cap, the diff is rebuilt from `details.oldText`/`newText` instead; when the whole result
-  was capped, the block says so rather than pasting a slice of JSON.
+  fabric's own per-audit cap, the same rows are recovered from the JSON text fabric keeps in
+  `details.preview` (whole rows only, since that text is cut mid-value), and failing that the diff is
+  rebuilt from `details.oldText`/`newText`; when the whole result was capped, the block says so rather
+  than pasting a slice of JSON.
 - A bash call's command is a markdown fence of its own under the call line, so Tern draws what a
   fence always gets: the `bash` label with its Copy button, the highlighter, the code background,
   and a ring from `tern/style.css`. It wraps instead of scrolling sideways and sits two cells in

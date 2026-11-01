@@ -294,14 +294,51 @@ function diffFromTexts(oldText: string, newText: string): DiffHunk[] | undefined
 }
 
 /**
+ * The `diff` field out of the JSON text fabric kept when it capped `details`:
+ * the string is cut mid-value, so the last row is dropped unless its quote closed.
+ */
+function salvageDiff(preview: unknown): string | undefined {
+	if (typeof preview !== "string") return undefined;
+	const open = '"diff":"';
+	const start = preview.indexOf(open);
+	if (start < 0) return undefined;
+	let index = start + open.length;
+	let text = "";
+	let closed = false;
+	while (index < preview.length) {
+		const char = preview[index];
+		if (char === "\\") {
+			const escape = preview[index + 1];
+			if (escape === undefined) break;
+			text += escape === "n" ? "\n" : escape === "t" ? "\t" : escape === "r" ? "" : escape;
+			index += 2;
+			continue;
+		}
+		if (char === '"') {
+			closed = true;
+			break;
+		}
+		text += char;
+		index += 1;
+	}
+	const rows = text.split("\n");
+	if (!closed) rows.pop();
+	const kept = rows.join("\n");
+	return kept.trim() === "" ? undefined : kept;
+}
+
+/**
  * The diff an edit answered with: `details.diff` (omp's `<marker><line>|text`
- * rows) when it survived, else one built from `details.oldText`/`newText`, so an
- * edit never falls back to a plain excerpt just because a field was capped away.
+ * rows) when it survived, else the same rows recovered from fabric's 16 KB
+ * preview of the capped `details`, else one built from `details.oldText`/`newText`,
+ * so an edit never falls back to a plain excerpt just because a field was capped.
  */
 function editDiff(result: unknown): { hunks: DiffHunk[]; path?: string } | undefined {
 	if (!isRecord(result)) return undefined;
 	const details = isRecord(result.details) ? result.details : result;
-	const raw = typeof details.diff === "string" ? details.diff : undefined;
+	// fabric replaces a too-large details object with its own cut JSON text.
+	const salvaged = details.fabricTruncated === true ? salvageDiff(details.preview) : undefined;
+	const raw = typeof details.diff === "string" ? details.diff : salvaged;
 	const hunks = raw === undefined ? undefined : parseOmpDiff(raw);
 	const oldText = typeof details.oldText === "string" ? details.oldText : undefined;
 	const newText = typeof details.newText === "string" ? details.newText : undefined;

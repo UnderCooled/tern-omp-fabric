@@ -455,6 +455,35 @@ describe("an edit answers with a diff", () => {
 		expect(props(diff).hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
 	});
 
+	test("a capped details still yields the diff fabric kept in its preview", () => {
+		for (const [preview, rows] of [
+			['{"diff":" 1|a\\n-2|b\\n+2|B","firstChangedLine":2}', [" a", "-b", "+B"]],
+			['{"diff":" 1|a\\n-2|b\\n+2|B\\n 3|half-writ', [" a", "-b", "+B"]],
+		] as const) {
+			const view = unwrap(
+				describeFabricResult(
+					{
+						content: [],
+						details: {
+							audits: [
+								{
+									...editAudit,
+									result: { ok: true, output: "[a.ts]\\n1:x", details: { fabricTruncated: true, originalChars: 34570, preview } },
+								},
+							],
+						},
+					},
+					options,
+					fabricCallArgs,
+				),
+				"capped-details view",
+			);
+			const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff block");
+			const hunks = props(diff).hunks as { lines: string[] }[];
+			expect(hunks.flatMap(hunk => hunk.lines)).toEqual([...rows]);
+		}
+	});
+
 	test("a result fabric itself truncated says so instead of pasting JSON", () => {
 		const view = unwrap(
 			describeFabricResult(
