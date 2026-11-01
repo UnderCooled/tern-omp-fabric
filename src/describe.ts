@@ -197,9 +197,23 @@ function jsonSafe(value: unknown): string | undefined {
 }
 
 /**
- * One call's output, as output rather than as data: text for text, printed JSON
- * for a structured result -- never the terminal's JSON tree, which unfolds into
- * a form that is not the output and cannot be framed. The role is what the
+ * What a call handed back, as terminal text: its string as-is, the `output` field
+ * when it answers with an envelope (`{ ok, output, details }`), else its JSON.
+ * Never syntax-highlighted: what a tool returns is terminal output, so `ansi`
+ * draws it the way it was written, colors and all.
+ */
+function resultText(result: unknown): string | undefined {
+	if (typeof result === "string") return result;
+	if (isRecord(result)) {
+		const output = result.output;
+		if (typeof output === "string") return output;
+		if (output !== undefined && output !== null) return jsonSafe(output);
+	}
+	return jsonSafe(result);
+}
+
+/**
+ * One call's output, as output rather than as data. The role is what the
  * stylesheet rings.
  */
 function resultNode(audit: FabricAudit): NativeChild | undefined {
@@ -207,27 +221,13 @@ function resultNode(audit: FabricAudit): NativeChild | undefined {
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
 	}
-	if (typeof result === "string") {
-		if (result.trim() === "") return undefined;
-		return {
-			k: "ansi",
-			key: "output",
-			p: { text: result, preview: { lines: AUDIT_RESULT_LINES }, role: "omp-fabric.output" },
-		};
-	}
-	const encoded = jsonSafe(result);
-	if (encoded === undefined) return muted("result not shown");
+	const text = resultText(result);
+	if (text === undefined) return muted("result not shown");
+	if (text.trim() === "") return undefined;
 	return {
-		k: "code",
+		k: "ansi",
 		key: "output",
-		p: {
-			text: encoded,
-			lang: "json",
-			preview: { lines: AUDIT_RESULT_LINES },
-			role: "omp-fabric.output",
-			actions: COPY_ACTION,
-			title: "Click the code to copy the output",
-		},
+		p: { text, preview: { lines: AUDIT_RESULT_LINES }, role: "omp-fabric.output" },
 	};
 }
 

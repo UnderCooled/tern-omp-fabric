@@ -55,10 +55,12 @@ Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases
 ```
 
 Every output in the card is a call's own: `audit.result` from fabric's audit trail, rendered under the
-call it belongs to, so two calls never share one body. The output keeps its terminal form — text
-as `ansi`, a structured result as printed JSON — never the terminal's unfolding JSON tree, which is
-data rather than output. The text fabric returns for the program as a whole — its `logs` plus the
-returned value, one blob with no call attribution — is not drawn.
+call it belongs to, so two calls never share one body. It is drawn as terminal output — the `ansi`
+kind, colors and all, never syntax-highlighted JSON and never the terminal's unfolding JSON tree:
+what a tool returns is output, not data. A result that answers in an envelope (`{ ok, output,
+details }`) shows only its `output` field, so the wrapper's bookkeeping stays out of the way. The
+text fabric returns for the program as a whole — its `logs` plus the returned value, one blob with no
+call attribution — is not drawn.
 
 A call's arguments stay out of the body: the head already names the call (`grep /foo/ in src · 24ms`),
 so the space under it belongs to what came back.
@@ -92,6 +94,9 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 - Each nested call is its own block, open by default: its head and the output fabric recorded for
   it (`audit.result`), so two calls never share one body. Each row folds away on its own head when a
   program made many calls, and the output is what the sheet rings.
+- A call's output is drawn as a terminal (`ansi`) with its own colors, not as highlighted JSON: an
+  envelope's `output` field when the tool answers with one, its string when it returns text, its
+  printed JSON otherwise.
 - The program's own returned text is not drawn. fabric hands it over as one blob — its `logs` and
   the returned value joined, with no attribution to a call — which is exactly the merged output
   this card used to show. What a call produced is read from its own audit instead.

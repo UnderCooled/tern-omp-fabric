@@ -160,6 +160,16 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, ninth pass (output text only, drawn as-a-terminal)
+
+| Ask | Change |
+| --- | --- |
+| only the output content | new `resultText`: a string result as-is, an envelope's `output` field when the tool answers `{ ok, output, details }`, its JSON otherwise. |
+| no JSON highlighting | `resultNode` emits `ansi` for every shape (`code lang=json` gone), so the text keeps whatever the tool itself colored. |
+
+`jsonSafe` still backs the fallback; `COPY_ACTION` now rides only on the program block. `bun test` 31 pass / 0 fail,
+`bun run typecheck` clean; smoke over an envelope audit prints `head + [ansi]` with the output field only.
+
 ## Revision 2026-11-01, eighth pass (outputs only, drawn as output)
 
 | Ask | Change |

@@ -230,21 +230,34 @@ describe("per-call rendering", () => {
 		expect(previewLines(ansi)).toBe(6);
 	});
 
-	test("a structured result is printed JSON, never the terminal's JSON tree", () => {
+	test("a structured result is drawn as terminal text, not highlighted JSON", () => {
 		const read = unwrap(auditsOf(fabricDetails)[1], "read audit");
 		const section = auditSection(read);
 		expect(byKind(section.c, "json")).toBeUndefined();
-		const code = unwrap(byKind(section.c, "code"), "object result code node");
-		expect(props(code).lang).toBe("json");
-		expect(props(code).text).toContain('"lines": 40');
-		expect(previewLines(code)).toBe(6);
+		expect(byKind(section.c, "code")).toBeUndefined();
+		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
+		expect(props(ansi).text).toContain('"lines": 40');
+		expect(previewLines(ansi)).toBe(6);
 	});
 
-	test("both output shapes carry the role the stylesheet rings", () => {
-		const text = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
-		expect(props(text).role).toBe("omp-fabric.output");
-		const json = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[1], "read audit")).c, "code"), "code node");
-		expect(props(json).role).toBe("omp-fabric.output");
+	test("an envelope result shows only its output field", () => {
+		const section = auditSection({
+			ref: "omp.bash",
+			tool: "bash",
+			success: true,
+			args: { command: "ls" },
+			result: { ok: true, output: "src/a.ts\nsrc/b.ts", details: { exit: 0 } },
+		});
+		const ansi = unwrap(byKind(section.c, "ansi"), "ansi node");
+		expect(props(ansi).text).toBe("src/a.ts\nsrc/b.ts");
+		expect(props(ansi).text).not.toContain("ok");
+		expect(props(ansi).role).toBe("omp-fabric.output");
+	});
+
+	test("a plain string result is drawn as-is under the output role", () => {
+		const ansi = unwrap(byKind(auditSection(unwrap(auditsOf(fabricDetails)[0], "grep audit")).c, "ansi"), "ansi node");
+		expect(props(ansi).role).toBe("omp-fabric.output");
+		expect(props(ansi).text).toBe("src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar");
 	});
 
 	test("a fromTrace audit with no result says the result was not retained", () => {
