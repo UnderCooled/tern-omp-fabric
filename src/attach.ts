@@ -14,7 +14,7 @@
  * every definition named fabric_exec, and return the list untouched. Wrapping the current
  * function keeps both patches composing whichever loads first.
  */
-import { describeFabricCall, describeFabricResult, type DescribeOptions, type FabricExecArgs } from "./describe.js";
+import { describeFabricCall, describeFabricResult } from "./describe.js";
 
 export const HOOKS_MARK: symbol = Symbol.for("tern-omp-fabric.describe.v1");
 export const PATCH_MARK: symbol = Symbol.for("tern-omp-fabric.registry.v1");
@@ -23,32 +23,14 @@ const FABRIC_TOOL = "fabric_exec";
 
 type Definition = Record<string | symbol, unknown> & { name?: unknown };
 
-/**
- * The call's describe options plus the one fact the host does not send: the directory the
- * session runs in. The host calls the hooks with its own options object, so it is copied.
- */
-const withCwd =
-	(cwd: string) =>
-	(options: unknown): DescribeOptions => ({
-		...((typeof options === "object" && options !== null ? options : {}) as DescribeOptions),
-		cwd,
-	});
-
 /** Attach the hooks to one definition. False when it is not fabric_exec or already ours. */
-export function attachDescribeHooks(definition: unknown, cwd: string = process.cwd()): boolean {
+export function attachDescribeHooks(definition: unknown): boolean {
 	if (typeof definition !== "object" || definition === null) return false;
 	const target = definition as Definition;
 	if (target.name !== FABRIC_TOOL || target[HOOKS_MARK] === true) return false;
-	const options = withCwd(cwd);
 	try {
-		target.describeCall = (args: unknown, callOptions: unknown) =>
-			describeFabricCall(args as FabricExecArgs | undefined, options(callOptions));
-		target.describeResult = (result: unknown, resultOptions: unknown, args: unknown) =>
-			describeFabricResult(
-				(result ?? {}) as { content?: unknown; details?: unknown; isError?: boolean },
-				options(resultOptions),
-				args as FabricExecArgs | undefined,
-			);
+		target.describeCall = describeFabricCall;
+		target.describeResult = describeFabricResult;
 		target[HOOKS_MARK] = true;
 		return true;
 	} catch {
@@ -58,7 +40,7 @@ export function attachDescribeHooks(definition: unknown, cwd: string = process.c
 }
 
 /** Wrap ExtensionRunner.prototype.getAllRegisteredTools. Idempotent per process. */
-export function patchToolListing(hostApi: unknown, cwd: string = process.cwd()): { ok: boolean; reason?: string } {
+export function patchToolListing(hostApi: unknown): { ok: boolean; reason?: string } {
 	const runner = (hostApi as { ExtensionRunner?: { prototype?: Record<string, unknown> } } | undefined)
 		?.ExtensionRunner;
 	const proto = runner?.prototype;
@@ -71,7 +53,7 @@ export function patchToolListing(hostApi: unknown, cwd: string = process.cwd()):
 		const tools = original.apply(this, args);
 		if (Array.isArray(tools)) {
 			for (const tool of tools) {
-				attachDescribeHooks((tool as { definition?: unknown } | undefined)?.definition, cwd);
+				attachDescribeHooks((tool as { definition?: unknown } | undefined)?.definition);
 			}
 		}
 		return tools;
@@ -85,6 +67,6 @@ export function patchToolListing(hostApi: unknown, cwd: string = process.cwd()):
 	return { ok: true };
 }
 
-export function installFabricNative(hostApi: unknown, cwd: string = process.cwd()): { ok: boolean; reason?: string } {
-	return patchToolListing(hostApi, cwd);
+export function installFabricNative(hostApi: unknown): { ok: boolean; reason?: string } {
+	return patchToolListing(hostApi);
 }

@@ -11,7 +11,7 @@ terminal output. Both halves of the complaint that started this plugin:
 | Before | After |
 | --- | --- |
 | `{code:"const [a, b] = await Promise.all([…`, 160 characters, not expandable | the program as a highlighted block in its own foldable section, unfolded and refolded by its head, copied by a click on the code |
-| the whole result as one raw output dump | the call's walltime, timeout and directory, the phases and nested calls in one foldable section (arguments, their own output, timing, failures), the return value as highlighted YAML/JSON, and a foot line saying done or failed with the duration |
+| the whole result as one raw output dump | the call's walltime and timeout, one fold per nested call (its own arguments, output, timing, failures), the program's logs and returned value each in their own fold, and a foot line saying done or failed with the duration |
 
 omp's own terminal rendering is untouched: fabric keeps its `renderCall`/`renderResult`, and the
 hooks this plugin adds are read only by terminals that render natively.
@@ -42,7 +42,7 @@ A `fabric_exec` step reads, top to bottom:
 
 ```text
 Fabric   Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases   ← head: verb and counts
-│ 1.2s · timeout 30s · D:/repos/demo                 ← walltime, timeout, working directory
+│ 1.2s · timeout 30s                                  ← walltime, timeout
 │ (the model's description, when it sent one)
 │ ▸ program                                           ← folded: its head unfolds, click copies
 │ ▸ calls                                  ← folded: phases, then one row per call
@@ -75,8 +75,7 @@ chord; it types `ctrl+o` into the focused omp pane.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, folded.
-- The call names its own facts: the walltime and the invocation's `timeoutMs` (while it runs), and
-  the session's working directory.
+- The call names its own timing: the walltime and the invocation's `timeoutMs` while it runs.
 - The foot line says how the program ended and how long it took (`✓ Done · 2.4s`, `✗ Failed`,
   `✗ Cancelled`), and says `timeout 30s` instead while the call has not returned.
 - Each nested call is its own fold: arguments and output stay behind that call's head, so two
@@ -97,8 +96,6 @@ chord; it types `ctrl+o` into the focused omp pane.
   after reload` where omp would show a diff.
 - The timeout is the invocation's own `timeoutMs`. Without one, the configured executor deadline is
   not visible to an extension and the foot line says nothing while the call runs.
-- The directory is the one omp was started in, captured when the extension loads; a program that
-  changes its own working directory does not change the line.
 - No block inside a `fabric_exec` card can carry its own frame from the node tree: the protocol
   draws one ring per tool call and flattens nested frames by design. The borders in `style.css`
   are a Tern sheet, so they exist only in Tern, only while this plugin is loaded, and a user CSS

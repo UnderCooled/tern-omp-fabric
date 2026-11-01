@@ -160,6 +160,15 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, fifth pass (the directory line goes)
+
+The meta line carried the session's working directory; it earned nothing on screen. Removed end to
+end rather than blanked: `DescribeOptions.cwd`, the `withCwd` wrapper in `attach.ts`, the `cwd` parameter on
+`attachDescribeHooks`/`patchToolListing`/`installFabricNative`, and the `path` span in `metaLine`. The hooks are
+assigned directly again, and the meta line reads `1.2s · timeout 30s` (or bare `timeout 30s` settled).
+
+`bun test` 38 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, fourth pass (the card chevron, and where frames come from)
 
 Two reports: expanding the "Fabric" head changed nothing, and neither the hairline nor any border

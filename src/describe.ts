@@ -63,8 +63,6 @@ export type DescribeOptions = {
 	media?: boolean;
 	elapsedMs?: number;
 	cancelled?: boolean;
-	/** The session's working directory; attach.ts threads it in (the host does not send one). */
-	cwd?: string;
 };
 
 /** Lines of one nested call's own output shown while collapsed. */
@@ -281,7 +279,7 @@ function joinSpans(parts: Span[][]): Span[] {
 	return out;
 }
 
-/** Walltime, the invocation's timeout and the working directory: the call's own facts. */
+/** The walltime (while it runs) and the invocation's timeout. */
 function metaLine(
 	options: DescribeOptions,
 	args: FabricExecArgs | undefined,
@@ -289,11 +287,9 @@ function metaLine(
 ): NativeChild | undefined {
 	const elapsed = withWalltime ? formatDuration(options.elapsedMs) : undefined;
 	const timeout = formatDuration(args?.timeoutMs);
-	const cwd = typeof options.cwd === "string" && options.cwd.trim() !== "" ? options.cwd.trim() : undefined;
 	const spans = joinSpans([
 		elapsed === undefined ? [] : [span(elapsed, "muted")],
 		timeout === undefined ? [] : [span("timeout " + timeout, "muted")],
-		cwd === undefined ? [] : [span(cwd, "path")],
 	]);
 	return spans.length === 0 ? undefined : { k: "text", key: "meta", p: { spans, role: "omp-fabric.meta" } };
 }

@@ -14,8 +14,6 @@ import { fabricCallArgs, fabricDetails, fabricResult, fromTraceAudit, OUTPUT_TEX
 
 type Span = { t: string; s?: string };
 
-const CWD = "D:/repos/demo";
-
 /** Unwrap an optional value or fail the test with a readable message. */
 function unwrap<T>(value: T | undefined | null, what: string): T {
 	if (value === undefined || value === null) throw new Error("expected " + what + ", got " + String(value));
@@ -60,7 +58,7 @@ function auditSections(view: NativeToolView): NativeNode[] {
 	return nodes(calls.c).filter(node => node.k === "section");
 }
 
-const options: DescribeOptions = { cwd: CWD, elapsedMs: 1200 };
+const options: DescribeOptions = { elapsedMs: 1200 };
 
 describe("programText / codeLineCount", () => {
 	test("joins string[] code with newlines and normalizes CRLF", () => {
@@ -87,13 +85,12 @@ describe("describeFabricCall", () => {
 		expect(head.meta).toEqual(["Sweep TODOs", "TypeScript · 12 lines"]);
 	});
 
-	test("the meta line carries the walltime, the timeout and the directory", () => {
+	test("the meta line carries the walltime and the timeout", () => {
 		const meta = unwrap(byKey(view.body, "meta"), "meta line");
 		expect(meta.k).toBe("text");
 		const spans = textSpans(meta);
-		expect(joined(spans)).toBe("1.2s · timeout 30s · " + CWD);
+		expect(joined(spans)).toBe("1.2s · timeout 30s");
 		expect(spans.find(span => span.t === "timeout 30s")?.s).toBe("muted");
-		expect(spans.find(span => span.t === CWD)?.s).toBe("path");
 	});
 
 	test("the description follows the meta line", () => {
@@ -142,12 +139,12 @@ describe("describeFabricCall", () => {
 	test("complete args with no code keep only the meta line", () => {
 		const empty = unwrap(describeFabricCall(undefined, options), "empty call view");
 		expect(kindList(empty.body)).toEqual(["text"]);
-		expect(joined(textSpans(unwrap(nodes(empty.body)[0], "meta line")))).toBe("1.2s · " + CWD);
+		expect(joined(textSpans(unwrap(nodes(empty.body)[0], "meta line")))).toBe("1.2s");
 	});
 });
 
 describe("describeFabricResult", () => {
-	const settled: DescribeOptions = { cwd: CWD, elapsedMs: 2400 };
+	const settled: DescribeOptions = { elapsedMs: 2400 };
 	const view = unwrap(describeFabricResult(fabricResult, settled, fabricCallArgs), "result view");
 
 	test("head: verb, line count, calls, failures, phases", () => {
@@ -163,7 +160,7 @@ describe("describeFabricResult", () => {
 	});
 
 	test("a settled result drops the walltime from the meta line", () => {
-		expect(joined(textSpans(unwrap(byKey(view.body, "meta"), "meta line")))).toBe("timeout 30s · " + CWD);
+		expect(joined(textSpans(unwrap(byKey(view.body, "meta"), "meta line")))).toBe("timeout 30s");
 	});
 
 	test("the calls section folds under a plain label, phases first", () => {
@@ -210,18 +207,18 @@ describe("describeFabricResult", () => {
 		const running = unwrap(
 			describeFabricResult(
 				{ isError: false, content: [], details: { audits: [], phases: [] } },
-				{ cwd: CWD, isPartial: true },
+				{ isPartial: true },
 				fabricCallArgs,
 			),
 			"running result view",
 		);
 		expect(joined(textSpans(unwrap(byKey(running.body, "foot"), "foot line")))).toBe("timeout 30s");
-		expect(joined(textSpans(unwrap(byKey(running.body, "meta"), "meta line")))).toBe("timeout 30s · " + CWD);
+		expect(joined(textSpans(unwrap(byKey(running.body, "meta"), "meta line")))).toBe("timeout 30s");
 	});
 
 	test("a cancelled call says so", () => {
 		const cancelled = unwrap(
-			describeFabricResult({ ...fabricResult }, { cwd: CWD, elapsedMs: 900, cancelled: true }, fabricCallArgs),
+			describeFabricResult({ ...fabricResult }, { elapsedMs: 900, cancelled: true }, fabricCallArgs),
 			"cancelled result view",
 		);
 		const spans = textSpans(unwrap(byKey(cancelled.body, "foot"), "foot line"));
@@ -291,11 +288,11 @@ describe("caps", () => {
 	});
 
 	test("expanded: all 12 audit sections", () => {
-		expect(auditSections(render({ cwd: CWD, expanded: true }))).toHaveLength(12);
+		expect(auditSections(render({ expanded: true }))).toHaveLength(12);
 	});
 
 	test("expanded opens every block fold so the chevron shows something", () => {
-		const view = render({ cwd: CWD, expanded: true });
+		const view = render({ expanded: true });
 		for (const key of ["program", "calls", "output"]) {
 			expect(props(unwrap(byKey(view.body, key), key + " section")).collapsed).toBe(false);
 		}
