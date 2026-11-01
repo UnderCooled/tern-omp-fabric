@@ -21,7 +21,7 @@ import {
 	traceOnlyDetails,
 } from "./fixtures";
 
-type Span = { t: string; s?: string };
+type Span = { t: string; s?: string; href?: string };
 
 /** Unwrap an optional value or fail the test with a readable message. */
 function unwrap<T>(value: T | undefined | null, what: string): T {
@@ -455,7 +455,7 @@ describe("an edit answers with a diff", () => {
 		expect(props(diff).hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
 	});
 
-	test("an edit whose details fabric capped draws no output at all", () => {
+	test("an edit whose details fabric capped links its file, and draws no output", () => {
 		const view = unwrap(
 			describeFabricResult(
 				{
@@ -485,7 +485,37 @@ describe("an edit answers with a diff", () => {
 		// A prefix of a diff reads as the whole change: no block, and no marker either.
 		expect(kindList(view.body)).toEqual(["section", "text"]);
 		expect(byKey(view.body, "output:0")).toBeUndefined();
-		expect(joined(textSpans(unwrap(nodes(view.body)[1], "call line")))).toBe("edit src/a.ts · 300ms");
+		const spans = textSpans(unwrap(nodes(view.body)[1], "call line"));
+		expect(spans[2]).toEqual({ t: "src/a.ts", s: "accent" });
+		expect(spans[2]).not.toHaveProperty("href");
+	});
+
+	test("an absolute path is the link Tern opens the file with", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						audits: [
+							{
+								...editAudit,
+								args: { path: "D:\\repos\\pkg\\src\\a.ts" },
+								result: {
+									ok: true,
+									output: "[a.ts]\\n1:x",
+									details: { fabricTruncated: true, originalChars: 34570, preview: "{}" },
+								},
+							},
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"linked view",
+		);
+		const path = textSpans(unwrap(nodes(view.body)[1], "call line"))[2];
+		expect(path).toEqual({ t: "D:\\repos\\pkg\\src\\a.ts", s: "accent", href: "file:///D:/repos/pkg/src/a.ts" });
 	});
 
 	test("a result fabric itself truncated says so instead of pasting JSON", () => {

@@ -16,7 +16,7 @@ import type { NativeChild } from "@oh-my-pi/pi-tui";
 import type { NativeToolHead, NativeToolView } from "@oh-my-pi/pi-tui/tools";
 
 /** A styled run; structurally TspSpan, declared here so no pi-wire import is needed. */
-type Span = { t: string; s?: string };
+type Span = { t: string; s?: string; href?: string };
 
 export type FabricExecArgs = {
 	code?: string | string[];
@@ -299,6 +299,15 @@ function cappedDetails(result: unknown): boolean {
 }
 
 /**
+ * A path as the link Tern opens it with: its routing hands a `file://` URL to the
+ * file itself. Only an absolute path is linked -- a bare `src/a.ts` names no file.
+ */
+function fileHref(path: string): string | undefined {
+	if (!/^([A-Za-z]:[\\/]|[\\/]{2})/.test(path)) return undefined;
+	return "file:///" + path.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+/**
  * The diff an edit answered with: `details.diff` (omp's `<marker><line>|text`
  * rows) when it survived, else one built from `details.oldText`/`newText`.
  */
@@ -329,7 +338,13 @@ function callHead(audit: FabricAudit): Span[] {
 	const head: Span[] = [span(label, "strong")];
 	// A bash command is a program, not a name: it goes in a code block of its own.
 	const detail = label === "bash" ? undefined : callDetail(audit);
-	if (detail !== undefined) head.push(span(" "), span(detail, "accent"));
+	if (detail !== undefined) {
+		// An edit whose change fabric capped has no diff to show: the file name is how
+		// the reader sees the change, so it opens the file instead.
+		const path = cappedDetails(audit.result) ? audit.args?.path : undefined;
+		const href = typeof path === "string" ? fileHref(path) : undefined;
+		head.push(span(" "), href === undefined ? span(detail, "accent") : { t: detail, s: "accent", href });
+	}
 	const took = formatDuration(callDuration(audit));
 	if (took !== undefined) head.push(span(` · ${took}`, "muted"));
 	if (audit.success === false) head.push(span(" · failed", "error"));
