@@ -70,8 +70,7 @@ under) beside the counted facts, so the body has no trailing status line.
 Every block is a fold of its own: the program, and the output of every call that returned one. A
 fold is one row until you open it — `program · 42 lines`, `grep output · 12 lines` — except the output of a
 call that took two seconds or more, which starts open: the wait is the reason to look. `ctrl+o`
-(`app.tools.expand`) opens all of them at once. And
-`ctrl+o` (`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
+(`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
 block its own disclosure: the terminal's "N more lines" button always opens the enclosing one, so
 a block that shows a preview cannot also unfold by itself. The Tern plugin adds a palette row for
 the open-all — **omp fabric: expand tool output** — so it is reachable without knowing the chord.
