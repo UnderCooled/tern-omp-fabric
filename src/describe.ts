@@ -235,27 +235,11 @@ function resultNodes(audit: FabricAudit, lines: number): NativeChild[] {
 	if (all.length <= lines) {
 		return [{ k: "ansi", key: "output", p: { text, role: "omp-fabric.output" } }];
 	}
-	// The tail is a real disclosure, not a note that looks like one: opening it
-	// shows the rest in place.
+	// Plain truncation, no fold of its own: the hint the terminal already draws for
+	// the card (ctrl+o / omp's app.tools.expand) is what opens the rest.
 	return [
 		{ k: "ansi", key: "output", p: { text: all.slice(0, lines).join("\n"), role: "omp-fabric.output" } },
-		{
-			k: "section",
-			key: "output-more",
-			p: {
-				head: [span("… " + countLabel(all.length - lines, "line") + " more", "muted")],
-				role: "omp-fabric.output-more",
-				collapsible: true,
-				collapsed: true,
-			},
-			c: [
-				{
-					k: "ansi",
-					key: "output-rest",
-					p: { text: all.slice(lines).join("\n"), role: "omp-fabric.output" },
-				},
-			],
-		},
+		muted("… " + countLabel(all.length - lines, "line") + " more"),
 	];
 }
 

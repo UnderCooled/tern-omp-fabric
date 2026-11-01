@@ -160,6 +160,13 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, thirteenth pass (the truncation note is text again)
+
+The `… N lines more` fold from the twelfth pass replaced the terminal's own hint, and the terminal
+already offers the card's expand (`ctrl+o`). It is a muted `text` again; the rest opens with the card.
+
+`bun test` 34 pass / 0 fail, `bun run typecheck` clean.
+
 ## Revision 2026-11-01, twelfth pass (the more row is a fold)
 
 The `… N lines more` under a slow call was muted text, so nothing opened it. `resultNodes` now emits a
