@@ -31,15 +31,6 @@ const props = (node: NativeNode): Record<string, unknown> => (node.p ?? {}) as R
 const spanList = (value: unknown): Span[] => (Array.isArray(value) ? (value as Span[]) : []);
 const textSpans = (node: NativeNode): Span[] => spanList(props(node).spans);
 const headSpans = (node: NativeNode): Span[] => spanList(props(node).head);
-const previewLines = (node: NativeNode): number | undefined => {
-	const preview = props(node).preview;
-	if (typeof preview !== "object" || preview === null || !("lines" in preview)) return undefined;
-	return Number((preview as { lines: number }).lines);
-};
-const actionOf = (node: NativeNode): Record<string, unknown> =>
-	(typeof props(node).actions === "object" && props(node).actions !== null
-		? props(node).actions
-		: {}) as Record<string, unknown>;
 const joined = (spans: Span[]): string => spans.map(span => span.t).join("");
 const kindList = (children: readonly NativeChild[] | undefined): string[] => nodes(children).map(node => node.k);
 const byKind = (children: readonly NativeChild[] | undefined, k: string): NativeNode | undefined =>
@@ -48,6 +39,10 @@ const byKey = (children: readonly NativeChild[] | undefined, key: string): Nativ
 	nodes(children).find(node => node.key === key);
 const withRole = (children: readonly NativeChild[] | undefined, role: string): NativeNode[] =>
 	nodes(children).filter(node => props(node).role === role);
+const actionOf = (node: NativeNode): Record<string, unknown> =>
+	(typeof props(node).actions === "object" && props(node).actions !== null
+		? props(node).actions
+		: {}) as Record<string, unknown>;
 const auditsOf = (details: FabricDetails): FabricAudit[] => details.audits ?? [];
 const toolHead = (view: NativeToolView): NativeToolHead => unwrap(view.tool, "tool head");
 
@@ -93,21 +88,31 @@ describe("describeFabricCall", () => {
 		expect(span.t).toBe("Greps src for TODO markers and reports files.");
 	});
 
-	test("the program is a clamped code block, not a second disclosure", () => {
-		const program = unwrap(byKey(view.body, "program"), "program block");
-		expect(program.k).toBe("code");
+	test("the program is its own fold, counted in its head", () => {
+		const program = unwrap(byKey(view.body, "program"), "program fold");
+		expect(program.k).toBe("section");
 		expect(props(program).role).toBe("omp-fabric.program");
-		expect(props(program).collapsed).toBeUndefined();
-		expect(previewLines(program)).toBe(4);
-		expect(props(program).text).toBe(programText(fabricCallArgs));
-		expect(actionOf(program).click).toBe("copy");
+		expect(props(program).collapsible).toBe(true);
+		expect(props(program).collapsed).toBe(true);
+		expect(joined(headSpans(program))).toBe("program · 12 lines");
 	});
 
-	test("nothing in the body is a card or a section", () => {
-		for (const node of nodes(view.body)) {
-			expect(node.k).not.toBe("card");
-			expect(node.k).not.toBe("section");
-		}
+	test("opening the program fold shows the whole program, and clicking the code copies it", () => {
+		const program = unwrap(byKey(view.body, "program"), "program fold");
+		const code = unwrap(byKind(program.c, "code"), "program code");
+		expect(props(code).text).toBe(programText(fabricCallArgs));
+		expect(props(code).lang).toBe("typescript");
+		expect(props(code).preview).toBeUndefined();
+		expect(actionOf(code).click).toBe("copy");
+	});
+
+	test("expanding the card starts the program open", () => {
+		const expanded = unwrap(describeFabricCall(fabricCallArgs, { expanded: true }), "expanded call view");
+		expect(props(unwrap(byKey(expanded.body, "program"), "program fold")).collapsed).toBe(false);
+	});
+
+	test("nothing in the body is a card", () => {
+		for (const node of nodes(view.body)) expect(node.k).not.toBe("card");
 	});
 
 	test("incomplete args with no code show composing…", () => {
@@ -142,8 +147,8 @@ describe("describeFabricResult", () => {
 		]);
 	});
 
-	test("body: program, the phase row, one line per call", () => {
-		expect(kindList(view.body)).toEqual(["code", "row", "text", "text", "text", "text"]);
+	test("body: the program fold, the phase row, one line per call", () => {
+		expect(kindList(view.body)).toEqual(["section", "row", "text", "text", "text", "text"]);
 		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(3);
 		expect(props(unwrap(byKind(view.body, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
@@ -156,7 +161,7 @@ describe("describeFabricResult", () => {
 		expect(joined(spans.filter(span => span.s === "muted"))).toContain("24ms");
 	});
 
-	test("fast calls that worked show no output at all", () => {
+	test("fast calls that worked show no output block", () => {
 		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(0);
 	});
 
@@ -188,7 +193,7 @@ describe("describeFabricResult", () => {
 			"running result view",
 		);
 		expect(joined(lastFact(running))).toBe("timeout 30s");
-		expect(kindList(running.body)).toEqual(["code"]);
+		expect(kindList(running.body)).toEqual(["section"]);
 	});
 
 	test("a cancelled call says so", () => {
@@ -208,56 +213,62 @@ describe("when a call shows its output", () => {
 		);
 	}
 
-	test("a slow call shows its output as a terminal the card clamps", () => {
+	test("a slow call gets an output fold, counted in its head", () => {
 		const view = render(slowAudit);
-		const output = unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
-		expect(output.k).toBe("ansi");
-		expect(previewLines(output)).toBe(4);
-		expect(props(output).text).toContain("line 6");
-		// The clamp is the terminal's own, so it still draws its expand hint.
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
+		const output = unwrap(byKey(view.body, "output:0"), "output fold");
+		expect(output.k).toBe("section");
+		expect(props(output).role).toBe("omp-fabric.output");
+		expect(props(output).collapsible).toBe(true);
+		expect(props(output).collapsed).toBe(true);
+		expect(joined(headSpans(output))).toBe("output · 6 lines");
 	});
 
-	test("a fast working call shows none", () => {
-		const view = render(unwrap(auditsOf(fabricDetails)[0], "grep audit"));
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(0);
+	test("opening that fold shows the whole output", () => {
+		const view = render(slowAudit);
+		const ansi = unwrap(byKey(unwrap(byKey(view.body, "output:0"), "output fold").c, "output:0:text"), "output text");
+		expect(ansi.k).toBe("ansi");
+		expect(String(props(ansi).text).split("\n")).toEqual(["line 1", "line 2", "line 3", "line 4", "line 5", "line 6"]);
+		expect(props(ansi).preview).toBeUndefined();
 	});
 
-	test("a failure shows its output even when fast", () => {
-		const view = render({ ...slowAudit, success: false, endedAt: 10 });
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
+	test("a fast working call gets none", () => {
+		expect(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")).body, "output:0")).toBeUndefined();
 	});
 
-	test("expanding the card shows every call's output", () => {
+	test("a failure gets one even when fast", () => {
+		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }).body, "output:0")).toBeDefined();
+	});
+
+	test("expanding the card opens every fold", () => {
 		const view = render(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
-		const output = unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
-		expect(props(output).text).toContain('"lines": 40');
+		expect(props(unwrap(byKey(view.body, "program"), "program fold")).collapsed).toBe(false);
+		expect(props(unwrap(byKey(view.body, "output:0"), "output fold")).collapsed).toBe(false);
 	});
 });
 
 describe("how a call's output is drawn", () => {
-	function outputOf(audit: FabricAudit, opts: DescribeOptions = options): NativeNode {
+	function outputText(audit: FabricAudit): unknown {
 		const view = unwrap(
-			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, opts, fabricCallArgs),
+			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, { expanded: true }, fabricCallArgs),
 			"single-audit view",
 		);
-		return unwrap(withRole(view.body, "omp-fabric.output")[0], "output node");
+		const fold = unwrap(byKey(view.body, "output:0"), "output fold");
+		return props(unwrap(byKind(fold.c, "ansi"), "output text")).text;
 	}
 
 	test("text is drawn as a terminal, not as highlighted JSON", () => {
-		const output = outputOf(unwrap(auditsOf(fabricDetails)[0], "grep audit"), { expanded: true });
-		expect(output.k).toBe("ansi");
-		expect(props(output).text).toBe("src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar");
+		expect(outputText(unwrap(auditsOf(fabricDetails)[0], "grep audit"))).toBe(
+			"src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar",
+		);
 	});
 
 	test("a structured result is terminal text too, never the JSON viewer", () => {
-		const output = outputOf(unwrap(auditsOf(fabricDetails)[1], "read audit"), { expanded: true });
-		expect(output.k).toBe("ansi");
-		expect(props(output).text).toContain('"lines": 40');
+		const text = String(outputText(unwrap(auditsOf(fabricDetails)[1], "read audit")));
+		expect(text).toContain('"lines": 40');
 	});
 
 	test("an envelope result shows only its output field", () => {
-		const output = outputOf({
+		const text = outputText({
 			ref: "omp.bash",
 			tool: "bash",
 			success: true,
@@ -266,11 +277,7 @@ describe("how a call's output is drawn", () => {
 			startedAt: 0,
 			endedAt: 5000,
 		});
-		expect(props(output).text).toBe("src/a.ts\nsrc/b.ts");
-	});
-
-	test("every output carries the role the stylesheet rings", () => {
-		expect(props(outputOf(slowAudit)).role).toBe("omp-fabric.output");
+		expect(text).toBe("src/a.ts\nsrc/b.ts");
 	});
 });
 
@@ -326,6 +333,6 @@ describe("trace-only details", () => {
 			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs),
 			"no-details view",
 		);
-		expect(kindList(bare.body)).toEqual(["code"]);
+		expect(kindList(bare.body)).toEqual(["section"]);
 	});
 });

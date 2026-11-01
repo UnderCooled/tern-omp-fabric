@@ -160,6 +160,20 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-01, fifteenth pass (each block is its own fold)
+
+Option 2 from the exchange: a block that previews cannot unfold alone (the terminal's "N more lines"
+always opens the enclosing disclosure), so every block became a disclosure.
+
+| Change | |
+| --- | --- |
+| `programBlock(program, options)` | a `section`, head `program · N lines`, `collapsed: options.expanded !== true`, child `code` with the copy action and no preview. |
+| `resultNode(audit, index, options)` | an `output · N lines` section over one `ansi`, same collapse rule; the ansi carries role `omp-fabric.output-text`, the section `omp-fabric.output`. |
+| constants | `PROGRAM_PREVIEW_LINES`/`OUTPUT_PREVIEW_LINES` gone: nothing clamps, everything folds. |
+
+Folded: `[program, call:0, call:1, output:1]`; expanded: every fold open. `bun test` 34 pass / 0 fail,
+`bun run typecheck` clean.
+
 ## Revision 2026-11-01, fourteenth pass (outputs handed to the terminal's own clamp)
 
 Why the card had no expand hint: the hint is drawn for content the terminal knows it hid. We were

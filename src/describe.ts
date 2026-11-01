@@ -60,9 +60,7 @@ export type DescribeOptions = {
 	cancelled?: boolean;
 };
 
-/** Lines a block keeps while the tool card is folded; the card's expand shows the rest. */
-const PROGRAM_PREVIEW_LINES = 4;
-const OUTPUT_PREVIEW_LINES = 4;
+
 const AUDITS_COLLAPSED = 8;
 const AUDITS_EXPANDED = 30;
 const DETAIL_CHARS = 72;
@@ -232,11 +230,12 @@ function callHead(audit: FabricAudit): Span[] {
 }
 
 /**
- * One call's output as a terminal, clamped by the terminal itself: `preview`
- * is what draws the card's "N more lines" and its expand hint, so the text is
- * handed over whole. The card's own expand is the only disclosure that lifts it.
+ * One call's output in its own fold: the head names it and how many lines it
+ * holds, and opening that fold shows it whole. A block inside a tool body cannot
+ * clamp and unfold independently -- its preview button opens the enclosing
+ * disclosure -- so each block is a disclosure of its own.
  */
-function resultNode(audit: FabricAudit, index: number): NativeChild | undefined {
+function resultNode(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild | undefined {
 	const result = audit.result;
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
@@ -245,9 +244,15 @@ function resultNode(audit: FabricAudit, index: number): NativeChild | undefined 
 	if (text === undefined) return muted("result not shown");
 	if (text.trim() === "") return undefined;
 	return {
-		k: "ansi",
+		k: "section",
 		key: `output:${index}`,
-		p: { text, preview: { lines: OUTPUT_PREVIEW_LINES }, role: "omp-fabric.output" },
+		p: {
+			head: [span("output", "muted"), span(" · " + countLabel(text.split("\n").length, "line"), "muted")],
+			role: "omp-fabric.output",
+			collapsible: true,
+			collapsed: options.expanded !== true,
+		},
+		c: [{ k: "ansi", key: `output:${index}:text`, p: { text, role: "omp-fabric.output-text" } }],
 	};
 }
 
@@ -264,7 +269,7 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	const slow = (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
 	const failed = audit.success === false;
 	if (options.expanded === true || slow || failed) {
-		const body = resultNode(audit, index);
+		const body = resultNode(audit, index, options);
 		if (body !== undefined) nodes.push(body);
 	}
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
@@ -298,37 +303,34 @@ function statusFacts(
 const COPY_ACTION = { click: "copy", menu: ["copy"] } as const;
 
 /**
- * A code block that clamps to `lines` while the tool card is folded and shows
- * whole once it is open: the card is the only disclosure here, because nested
- * frames are flattened (tsp.d.ts, TspToolProps) and a section's preview would
- * give way inside a folded one anyway.
+ * The program in its own fold: the head counts its lines, opening it shows the
+ * whole program, and a click on the code copies it while the card's expand
+ * (ctrl+o) opens every fold at once.
  */
-function codeBlock(
-	key: string,
-	role: string,
-	text: string,
-	lang: string | undefined,
-	lines: number,
-	copyTitle: string,
-	start?: number,
-): NativeChild {
+function programBlock(program: string, options: DescribeOptions): NativeChild {
+	const lines = program.split("\n").length;
 	return {
-		k: "code",
-		key,
-		p: { text, lang, start, preview: { lines }, role, actions: COPY_ACTION, title: copyTitle },
+		k: "section",
+		key: "program",
+		p: {
+			head: [span("program", "muted"), span(" · " + countLabel(lines, "line"), "muted")],
+			role: "omp-fabric.program",
+			collapsible: true,
+			collapsed: options.expanded !== true,
+		},
+		c: [
+			{
+				k: "code",
+				key: "program-code",
+				p: {
+					text: program,
+					lang: "typescript",
+					actions: COPY_ACTION,
+					title: "Click the code to copy the program",
+				},
+			},
+		],
 	};
-}
-
-/** The program, clamped until the card is expanded, copied by a click. */
-function programBlock(program: string): NativeChild {
-	return codeBlock(
-		"program",
-		"omp-fabric.program",
-		program,
-		"typescript",
-		PROGRAM_PREVIEW_LINES,
-		"Click the code to copy the program",
-	);
 }
 
 /** The phases, then one block per call (the counts sit in the head). */
@@ -385,7 +387,7 @@ export function describeFabricCall(
 	const body: NativeChild[] = [];
 	if (display.description !== undefined) body.push(text([span(display.description, "muted")]));
 	if (program !== "") {
-		body.push(programBlock(program));
+		body.push(programBlock(program, options));
 	} else if (options.argsComplete === false) {
 		body.push(muted("composing…"));
 	}
@@ -472,7 +474,7 @@ export function describeFabricResult(
 	facts.push(...statusFacts(failed, options, args));
 
 	const body: NativeChild[] = [];
-	if (program !== "") body.push(programBlock(program));
+	if (program !== "") body.push(programBlock(program, options));
 	body.push(...callBlocks(audits, phases, options));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
