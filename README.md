@@ -104,10 +104,11 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   rendering instead of a monospaced paste of the post-edit excerpt. When that field did not survive
   fabric's own per-audit cap, the diff is rebuilt from `details.oldText`/`newText` instead; when the whole result
   was capped, the block says so rather than pasting a slice of JSON.
-- A bash call's command is a code block of its own under the call line, highlighted with Tern's
-  `bash` grammar and always whole: a pipe or a redirect cut down to fit a tool label stops being
-  readable. It wraps instead of scrolling sideways, so a long command stays readable at any pane
-  width, and sits two cells in from the call line, under the label rather than out past it. The line keeps the tool and the duration; the output fold follows as for any other call.
+- A bash call's command is a markdown fence of its own under the call line, so Tern draws what a
+  fence always gets: the `bash` label with its Copy button, the highlighter, the code background,
+  and a ring from `tern/style.css`. It wraps instead of scrolling sideways and sits two cells in
+  from the call line, under the label rather than out past it. The line keeps the tool and the
+  duration; the output fold follows as for any other call.
 - Display is per tool. `read` and `write` carry their fact on the call line — `3 lines`, `42 bytes` — and
   draw no output at all: a file's own text is data, not something anyone reads back in a
   transcript. Everything else keeps its fold, and `edit` gets the diff. The table lives in `TOOL_DISPLAY`

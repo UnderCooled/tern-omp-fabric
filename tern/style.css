@@ -25,6 +25,27 @@
 	margin-top: 6px;
 }
 
+/* A bash call's command: a markdown fence, so Tern draws its language head and Copy
+   button, ringed here because the protocol flattens frames inside a tool body.
+   The last rule is inner DOM (kit's fence markup: div.code > pre > code) and may
+   move between Tern versions; without it the fence scrolls sideways again. */
+[data-role="omp-fabric.command"] {
+	margin: 2px 0 6px;
+}
+
+[data-role="omp-fabric.command"] .code {
+	border: 1px solid var(--l1);
+	border-radius: 8px;
+	padding: 4px 10px;
+}
+
+[data-role="omp-fabric.command"] .code pre,
+[data-role="omp-fabric.command"] .code pre > code {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	overflow-x: hidden;
+}
+
 /* No hairlines: the head facts, the rings and the call lines separate the parts.
    Tern puts .sf-tool-hr on the child element itself, so nodes carrying one of our
    own roles are left alone -- a border-top of 0 there would take a ring edge with it. */

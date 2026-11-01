@@ -428,6 +428,18 @@ function bashCommand(audit: FabricAudit): string | undefined {
 	return typeof command === "string" && command.trim() !== "" ? command : undefined;
 }
 
+/**
+ * The command as a fenced block, so Tern draws what a fence always gets: the
+ * language head with its Copy button, the highlighter, the code background. The
+ * fence outruns any backtick run inside the command, so nothing closes it early.
+ */
+function fencedCommand(command: string): string {
+	const runs = command.match(/`+/g) ?? [];
+	const longest = runs.reduce((most, run) => Math.max(most, run.length), 0);
+	const fence = "`".repeat(Math.max(3, longest + 1));
+	return fence + "bash\n" + command.replace(/\n+$/, "") + "\n" + fence;
+}
+
 /** The fact a call's own rule puts on its line, for a result that has one. */
 function headFact(display: ToolDisplay, result: unknown): string | undefined {
 	const factOf = display.fact;
@@ -467,17 +479,12 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 				// out past it to the left edge.
 				{ k: "text", key: `call:${index}:indent`, p: { spans: [span("  ")], min: { w: "2ch" }, shrink: 0 } },
 				{
-					k: "code",
+					k: "md",
 					key: `call:${index}:command-text`,
-					// Wrapped, not scrolled: a long command read sideways is not read at all.
-					p: {
-						text: command,
-						lang: "bash",
-						wrap: true,
-						role: "omp-fabric.command",
-						grow: 1,
-						basis: 0,
-					},
+					// A fence, not a bare code node: Tern gives a fence the language head,
+					// its Copy button and the code background; the sheet below rings it and
+					// wraps its lines.
+					p: { text: fencedCommand(command), role: "omp-fabric.command", grow: 1, basis: 0 },
 				},
 			],
 		});

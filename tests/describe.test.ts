@@ -276,15 +276,29 @@ describe("when a call shows its output", () => {
 		const indent = unwrap(nodes(row.c)[0], "indent cell");
 		expect(joined(textSpans(indent))).toBe("  ");
 		const command = unwrap(nodes(row.c)[1], "command block");
-		expect(command.k).toBe("code");
+		expect(command.k).toBe("md");
 		expect(props(command)).toMatchObject({
-			text: "bun test 2>&1 | tail -4",
-			lang: "bash",
-			wrap: true,
+			text: "```bash\nbun test 2>&1 | tail -4\n```",
 			role: "omp-fabric.command",
 		});
 		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
 		expect(joined(textSpans(line))).toBe("bash · 40ms");
+	});
+
+	test("a command holding a backtick fence gets a longer one around it", () => {
+		const view = render({
+			ref: "omp.bash",
+			tool: "bash",
+			success: true,
+			args: { command: "echo '```js'" },
+			result: "x",
+			startedAt: 0,
+			endedAt: 10,
+		});
+		const row = unwrap(byKey(view.body, "call:0:command"), "command row");
+		expect(props(unwrap(nodes(row.c)[1], "command block")).text).toBe(
+			"````bash\necho '```js'\n````",
+		);
 	});
 
 	test("a read says how many lines it returned, with no fold", () => {
