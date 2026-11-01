@@ -6,6 +6,10 @@
  * A border is a Tern concern, so it is drawn here, by role, instead of being
  * sent as a node omp cannot nest.
  *
+ * The ring is a box-shadow, not a border: Tern puts the class .sf-tool-hr on the
+ * child element itself when the child kind changes, and the hairline rules below
+ * zero its border-top -- which would take the ring's top edge with it.
+ *
  * Roles come from src/describe.ts. Everything colors through Tern's variables,
  * so the sheet follows the user's theme.
  */
@@ -14,7 +18,7 @@
    it reads as its own object at a glance. */
 [data-role="omp-fabric.program"],
 [data-role="omp-fabric.output"] {
-	border: 1px solid var(--l1);
+	box-shadow: 0 0 0 1px var(--l1);
 	border-radius: 8px;
 	padding: 4px 10px;
 	margin: 6px 0;
@@ -27,9 +31,8 @@
 	margin: 4px 0;
 }
 
-/* No hairlines: Tern draws .sf-tool-hr between children of differing kinds,
-   and the head facts plus the block rings already separate them. */
-[data-role="omp.tool.fabric_exec"] .sf-tool-hr,
-[data-role="omp.tool.fabric_exec"] > .sf-tool-hr {
+/* No hairlines: the head facts, the block rings and the section heads already
+   separate the parts. Scoped to this tool card and to nodes that are not ours. */
+[data-role="omp.tool.fabric_exec"] .sf-tool-hr:not([data-role^="omp-fabric."]) {
 	border-top: 0;
 }
