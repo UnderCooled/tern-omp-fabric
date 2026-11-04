@@ -131,39 +131,26 @@ export const slowAudit: FabricAudit = {
 	endedAt: 5200,
 };
 
-/** A task call: two agents spawned in one batch, one of them failed. */
-export const taskAudit: FabricAudit = {
-	ref: "task",
-	tool: "task",
-	provider: "omp",
+/** A spawn: fabric started one child agent and handed back its handle. */
+export const spawnAudit: FabricAudit = {
+	ref: "agents.spawn",
+	tool: "spawn",
+	provider: "agents",
 	success: true,
 	args: {
-		context: "Bun workspace; tests run with bun test.",
-		tasks: [
-			{
-				name: "ExploreRepos",
-				agent: "scout",
-				model: "sonnet",
-				task: "Find every caller of describeFabricResult and report the files with line numbers.",
-				solutionSpace: "one pass",
-			},
-			{
-				name: "PatchDocs",
-				agent: "mechanic",
-				task: "Update the README display table.\n\nThen run bun test.",
-				solutionSpace: "one fix",
-			},
-		],
+		name: "ExploreRepos",
+		task: "Complete assignment thoroughly: find every caller of describeFabricResult.\n\nThen report the files.",
+		runner: "omp",
+		model: "anthropic/claude-sonnet-4-5",
 	},
 	result: {
-		ok: true,
-		output: "ExploreRepos: 3 files\nPatchDocs: README updated",
-		details: {
-			results: [
-				{ id: "ExploreRepos", index: 0, exitCode: 0 },
-				{ id: "PatchDocs", index: 1, exitCode: 1, error: "bun test failed" },
-			],
-		},
+		id: "01a1589d",
+		name: "ExploreRepos",
+		status: "running",
+		runner: "omp",
+		transport: "process",
+		cwd: "D:/repos/tern_plugins/tern-omp-fabric",
+		model: "anthropic/claude-sonnet-4-5",
 	},
 	startedAt: 0,
 	endedAt: 5200,

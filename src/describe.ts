@@ -467,103 +467,100 @@ function fencedCommand(command: string): string {
 }
 
 
-/** A subagent a `task` call spawns, as the model asked for it. */
-type SpawnedAgent = { name: string; agent?: string; model?: string; brief: string };
+/** The child agent a spawn-like call started, as fabric reports it back. */
+type SpawnedAgent = {
+	name: string;
+	agent?: string;
+	model?: string;
+	brief: string;
+	status: "pending" | "done" | "failed" | "aborted";
+};
 
 /** The prefix omp's own agent row strips before it summarizes a brief. */
 const ASSIGNMENT_PREFIX = /^\s*Complete assignment thoroughly:\s*/i;
 
+/** The agents provider's calls that start a child: they take a `task`, nothing else does. */
+const SPAWN_TOOLS = new Set(["spawn", "run", "handoff"]);
+
+/** Fabric's own run states, in the words an agent row shows. */
+const AGENT_STATUS: Record<string, SpawnedAgent["status"]> = {
+	queued: "pending",
+	running: "pending",
+	completed: "done",
+	failed: "failed",
+	stopped: "aborted",
+	cancelled: "aborted",
+	timed_out: "aborted",
+};
+
+const nonEmpty = (value: unknown): string | undefined => {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed === "" ? undefined : trimmed;
+};
+
 /**
- * The agents a `task` call spawns: the batch form (`{ context, tasks[] }`) or
- * the flat single-agent one. The brief is fabric's own preview of it -- the first
- * 2000 characters -- which is still the assignment, not a label cut to a line.
+ * The child an `agents.spawn`/`run`/`handoff` call started. The call takes one
+ * `task`, so there is one agent, and the result is its handle: that names it,
+ * says which runner and model it went to, and carries its run state. The brief
+ * is fabric's own preview of the task -- the first 2000 characters.
  */
-function spawnedAgents(audit: FabricAudit): SpawnedAgent[] {
-	if (callLabel(audit) !== "task") return [];
+function spawnedAgent(audit: FabricAudit): SpawnedAgent | undefined {
+	if (audit.provider !== "agents") return undefined;
+	const tool = callLabel(audit).toLowerCase();
+	if (!SPAWN_TOOLS.has(tool)) return undefined;
 	const args = audit.args ?? {};
-	const entries: unknown[] = Array.isArray(args.tasks) ? args.tasks : [args];
-	const spawns: SpawnedAgent[] = [];
-	for (const entry of entries) {
-		if (!isRecord(entry) || typeof entry.task !== "string" || entry.task.trim() === "") continue;
-		const name = typeof entry.name === "string" && entry.name.trim() !== "" ? entry.name.trim() : undefined;
-		const agent = typeof entry.agent === "string" && entry.agent.trim() !== "" ? entry.agent.trim() : undefined;
-		const model = typeof entry.model === "string" && entry.model.trim() !== "" ? entry.model.trim() : undefined;
-		spawns.push({
-			name: name ?? (entries.length > 1 ? `#${spawns.length + 1}` : "agent"),
-			...(agent === undefined ? {} : { agent }),
-			...(model === undefined ? {} : { model }),
-			brief: entry.task.replace(/\r\n?/g, "\n").replace(/\n+$/, ""),
-		});
-	}
-	return spawns;
+	const handle = isRecord(audit.result) ? audit.result : undefined;
+	const brief =
+		typeof args.task === "string" ? args.task.replace(/\r\n?/g, "\n").replace(/\n+$/, "") : "";
+	const name =
+		nonEmpty(args.name) ??
+		nonEmpty(handle?.name) ??
+		cut(firstLine(brief.replace(ASSIGNMENT_PREFIX, "")), 48);
+	if (name === undefined && brief === "") return undefined;
+	const agent = nonEmpty(handle?.runner) ?? nonEmpty(args.runner);
+	const model = nonEmpty(handle?.model) ?? nonEmpty(args.model);
+	const reported = AGENT_STATUS[String(handle?.status ?? "").toLowerCase()];
+	return {
+		name: name ?? "agent",
+		...(agent === undefined ? {} : { agent }),
+		...(model === undefined ? {} : { model }),
+		brief,
+		status: reported ?? (audit.success === false ? "failed" : tool === "spawn" ? "pending" : "done"),
+	};
 }
 
-/** What a task call spawns, as its line names it: the one agent, or how many. */
+/** What the call spawned, as its line names it: the one agent. */
 function spawnLabel(audit: FabricAudit): string | undefined {
-	const spawns = spawnedAgents(audit);
-	if (spawns.length === 0) return undefined;
-	return spawns.length === 1 ? spawns[0]!.name : countLabel(spawns.length, "agent");
-}
-
-/** One spawned agent's outcome: its own row from the result's details, else the call's. */
-function agentStatus(
-	audit: FabricAudit,
-	name: string,
-	index: number,
-): "pending" | "done" | "failed" | "aborted" {
-	const result = audit.result;
-	if (result === undefined || result === null) return "pending";
-	const details = isRecord(result) && isRecord(result.details) ? result.details : undefined;
-	const results: unknown[] = details !== undefined && Array.isArray(details.results) ? details.results : [];
-	const own = results.find(entry => isRecord(entry) && (entry.id === name || entry.index === index));
-	if (isRecord(own)) {
-		if (own.aborted === true) return "aborted";
-		if (typeof own.exitCode === "number" && own.exitCode !== 0) return "failed";
-		return typeof own.error === "string" ? "failed" : "done";
-	}
-	return audit.success === false ? "failed" : "done";
+	return spawnedAgent(audit)?.name;
 }
 
 /**
- * One spawned agent: the row names it, and the fold under it holds the whole
- * brief as the model wrote it, drawn as markdown the way omp's own agent card
- * draws an assignment. A brief is long, so the row starts folded.
+ * The spawned agent: the row names it and says which runner and model it went
+ * to, and the fold under it holds the whole brief as the model wrote it, drawn
+ * as markdown the way omp's own agent card draws an assignment. A brief is long,
+ * so the row starts folded.
  */
-function agentNode(
-	audit: FabricAudit,
-	spawn: SpawnedAgent,
-	call: number,
-	index: number,
-	options: DescribeOptions,
-): NativeChild {
+function agentNode(spawn: SpawnedAgent, call: number, options: DescribeOptions): NativeChild {
 	const summary = firstLine(spawn.brief.replace(ASSIGNMENT_PREFIX, ""));
+	const children: NativeChild[] =
+		spawn.brief === ""
+			? []
+			: [{ k: "md", key: `call:${call}:agent:brief`, p: { text: spawn.brief, role: "omp-fabric.assignment" } }];
 	return {
 		k: "agent",
-		key: `call:${call}:agent:${index}`,
+		key: `call:${call}:agent`,
 		p: {
 			name: spawn.name,
 			...(spawn.agent === undefined ? {} : { agent: spawn.agent }),
 			...(spawn.model === undefined ? {} : { model: spawn.model }),
 			...(summary === "" ? {} : { task: cut(summary, DETAIL_CHARS) }),
-			status: agentStatus(audit, spawn.name, index),
-			collapsible: true,
+			status: spawn.status,
+			collapsible: children.length > 0,
 			collapsed: options.expanded !== true,
 			role: "omp-fabric.agent",
 		},
-		c: [
-			{ k: "md", key: `call:${call}:agent:${index}:brief`, p: { text: spawn.brief, role: "omp-fabric.assignment" } },
-		],
-	};
-}
-
-/** The batch's shared context, as omp's own card shows it: two quiet wrapped lines. */
-function contextNode(audit: FabricAudit, index: number): NativeChild | undefined {
-	const context = audit.args?.context;
-	if (typeof context !== "string" || context.trim() === "") return undefined;
-	return {
-		k: "text",
-		key: `call:${index}:context`,
-		p: { spans: [span(context.trim(), "muted")], wrap: "word", lines: 2, role: "omp-fabric.context" },
+		c: children,
 	};
 }
 
@@ -586,11 +583,11 @@ function headFact(display: ToolDisplay, result: unknown): string | undefined {
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
 	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
 	const body = outputNode(audit, index, options, display.fold);
-	const spawns = spawnedAgents(audit);
+	const spawn = spawnedAgent(audit);
 	const head = callHead(audit);
 	// A capped details was not "no output": it was output nobody can vouch for, and
-	// a spawn with no result yet is shown by its own rows, not by that marker.
-	if (body === undefined && !cappedDetails(audit.result) && spawns.length === 0) {
+	// a spawn with no result yet is shown by its own row, not by that marker.
+	if (body === undefined && !cappedDetails(audit.result) && spawn === undefined) {
 		const fact = headFact(display, audit.result);
 		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
 	}
@@ -619,15 +616,8 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 			],
 		});
 	}
-	// What the model asked each agent for: the batch's shared context, then one row
-	// per spawn, whose own fold holds the whole brief.
-	if (spawns.length > 0) {
-		const context = contextNode(audit, index);
-		if (context !== undefined) nodes.push(context);
-		for (let spawn = 0; spawn < spawns.length; spawn += 1) {
-			nodes.push(agentNode(audit, spawns[spawn]!, index, spawn, options));
-		}
-	}
+	// What the model asked the agent for: one row, whose own fold holds the brief.
+	if (spawn !== undefined) nodes.push(agentNode(spawn, index, options));
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
 	if (audit.success === false && audit.error) {

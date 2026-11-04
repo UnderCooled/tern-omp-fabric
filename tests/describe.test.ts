@@ -18,7 +18,7 @@ import {
 	fromTraceAudit,
 	OUTPUT_TEXT,
 	slowAudit,
-	taskAudit,
+	spawnAudit,
 	traceOnlyDetails,
 } from "./fixtures";
 
@@ -346,11 +346,11 @@ describe("when a call shows its output", () => {
 });
 
 
-describe("a task call spawns agents", () => {
+describe("a spawn shows the agent it started", () => {
 	function render(audit: FabricAudit, opts: DescribeOptions = options): NativeToolView {
 		return unwrap(
 			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, opts, fabricCallArgs),
-			"task view",
+			"spawn view",
 		);
 	}
 	function callLine(view: NativeToolView): NativeNode {
@@ -360,71 +360,64 @@ describe("a task call spawns agents", () => {
 		return nodes(view.body).filter(node => node.k === "agent");
 	}
 
-	test("the line counts the spawns instead of cutting the shared context", () => {
-		const view = render(taskAudit);
-		expect(joined(textSpans(callLine(view)))).toBe("task 2 agents · 5.2s");
+	test("the line names the agent instead of cutting the task to 72 characters", () => {
+		expect(joined(textSpans(callLine(render(spawnAudit))))).toBe("spawn ExploreRepos · 5.2s");
 	});
 
-	test("the shared context is one quiet wrapped line above the rows", () => {
-		const context = unwrap(byKey(render(taskAudit).body, "call:0:context"), "context line");
-		expect(context.k).toBe("text");
-		expect(props(context)).toMatchObject({ wrap: "word", lines: 2, role: "omp-fabric.context" });
-		expect(joined(textSpans(context))).toBe("Bun workspace; tests run with bun test.");
-	});
-
-	test("each spawn gets a row that names it, with the whole brief under it", () => {
-		const rows = agentRows(render(taskAudit));
-		expect(rows.length).toBe(2);
-		const first = unwrap(rows[0], "first agent row");
-		expect(props(first)).toMatchObject({
+	test("the spawn gets a row naming the runner and model, with the whole brief under it", () => {
+		const rows = agentRows(render(spawnAudit));
+		expect(rows.length).toBe(1);
+		const row = unwrap(rows[0], "agent row");
+		expect(props(row)).toMatchObject({
 			name: "ExploreRepos",
-			agent: "scout",
-			model: "sonnet",
-			status: "done",
+			agent: "omp",
+			model: "anthropic/claude-sonnet-4-5",
+			status: "pending",
 			collapsible: true,
 			collapsed: true,
 			role: "omp-fabric.agent",
 		});
-		const brief = unwrap(nodes(first.c)[0], "brief");
+		const brief = unwrap(nodes(row.c)[0], "brief");
 		expect(brief.k).toBe("md");
 		expect(props(brief).text).toBe(
-			"Find every caller of describeFabricResult and report the files with line numbers.",
+			"Complete assignment thoroughly: find every caller of describeFabricResult.\n\nThen report the files.",
 		);
 	});
 
-	test("the row summarizes the brief in one line", () => {
-		const rows = agentRows(render(taskAudit));
-		expect(props(unwrap(rows[1], "second agent row")).task).toBe("Update the README display table.");
+	test("the row summarizes the brief in one line, without omp's assignment prefix", () => {
+		const rows = agentRows(render(spawnAudit));
+		expect(props(unwrap(rows[0], "agent row")).task).toBe("find every caller of describeFabricResult.");
 	});
 
-	test("an agent that failed says so on its own row", () => {
-		const rows = agentRows(render(taskAudit));
-		expect(props(unwrap(rows[1], "second agent row")).status).toBe("failed");
+	test("a handle that failed says so on the row", () => {
+		const view = render({ ...spawnAudit, result: { ...(spawnAudit.result as object), status: "failed" }, success: false });
+		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("failed");
 	});
 
-	test("expanding the card opens the briefs", () => {
-		const rows = agentRows(render(taskAudit, { expanded: true }));
-		expect(props(unwrap(rows[0], "first agent row")).collapsed).toBe(false);
-	});
-
-	test("a flat single spawn is named on the line, and keeps its brief", () => {
+	test("a waited run reports the agent as done", () => {
 		const view = render({
-			ref: "task",
-			tool: "task",
-			success: true,
-			args: { name: "SeqAudit", agent: "scout", task: "Audit the sequence.", solutionSpace: "one pass" },
-			result: "done",
-			startedAt: 0,
+			...spawnAudit,
+			ref: "agents.run",
+			tool: "run",
+			result: { id: "01a1589d", name: "ExploreRepos", status: "completed", runner: "omp" },
 			endedAt: 40,
 		});
-		expect(joined(textSpans(callLine(view)))).toBe("task SeqAudit · 40ms");
-		const rows = agentRows(view);
-		expect(rows.length).toBe(1);
-		expect(props(unwrap(rows[0], "agent row"))).toMatchObject({ name: "SeqAudit", status: "done" });
+		expect(joined(textSpans(callLine(view)))).toBe("run ExploreRepos · 40ms");
+		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("done");
+	});
+
+	test("expanding the card opens the brief", () => {
+		const rows = agentRows(render(spawnAudit, { expanded: true }));
+		expect(props(unwrap(rows[0], "agent row")).collapsed).toBe(false);
+	});
+
+	test("another provider's spawn-shaped call is left to the generic line", () => {
+		const view = render({ ...spawnAudit, provider: "mcp", tool: "spawn" });
+		expect(agentRows(view).length).toBe(0);
 	});
 
 	test("a spawn with no result yet reads as pending, with no (no output) marker", () => {
-		const view = render({ ...taskAudit, result: undefined, endedAt: undefined });
+		const view = render({ ...spawnAudit, result: undefined, endedAt: undefined });
 		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("pending");
 		expect(joined(textSpans(callLine(view)))).not.toContain("no output");
 	});

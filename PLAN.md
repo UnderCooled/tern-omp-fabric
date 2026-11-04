@@ -160,33 +160,27 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
-## Revision 2026-11-02, twenty-fifth pass (agent spawns get their own rows)
+## Revision 2026-11-02, twenty-fifth pass (a spawn shows the agent it started)
 
-A `task` audit carried no readable argument: fabric previews args at 2000 characters each, and
-`callDetail` fell through to the batch's shared `context` cut at 72, so the line named the spawn by a
-fragment of the sentence every agent shares and the briefs were nowhere on the card.
+A fabric spawn is `agents.spawn` — also `run` and `handoff` — on provider `agents`: one `task`, and
+the result is the child's handle. `callDetail` fell through to the generic argument cut at 72, so the
+card named the spawn by a fragment of its brief and the brief itself was nowhere on it.
 
-`spawnedAgents` reads both shapes the task schema allows — `{ context, tasks[] }` and the flat
-`{ name, agent, task }` — and `callBlock` draws, under the call line, the shared context as one quiet
-wrapped line (role `omp-fabric.context`, two lines) and one `agent` node per spawn (role
-`omp-fabric.agent`): name, agent type, model, the brief's first line as the row's summary (with omp's
-`Complete assignment thoroughly:` prefix stripped, as its own agent row does), and the status from
-`result.details.results` matched by id or index — `pending` while there is no result at all, else the
-call's own success. The whole brief is the row's child as an `md` node (role `omp-fabric.assignment`),
-folded until the row is opened or the card is expanded. The line reads `task 2 agents · 5.2s` (or
-`task SeqAudit · 40ms` for one), and a spawn with no result yet no longer prints `(no output)` beside
-its rows. The merged `task output` fold stays: fabric keeps one result per call, so the reports cannot
-be split per agent.
+`spawnedAgent` reads the real shape: name from `args.name` then the handle's, runner and model from the
+handle then the args, and status from the handle's own run state — `queued`/`running` read as pending,
+`completed` as done, `failed` as failed, `stopped`/`cancelled`/`timed_out` as aborted — falling back to
+the call's own success, so a `spawn` that has not failed is still pending and a `run` is done. The line
+reads `spawn ExploreRepos · 5.2s`, and under it one `agent` node (role `omp-fabric.agent`) names the
+runner and model, carries the brief's first line as its summary (with omp's `Complete assignment
+thoroughly:` prefix stripped, as its own agent row does) and holds the whole brief as an `md` child
+(role `omp-fabric.assignment`), folded until the row is opened or the card is expanded. A spawn with no
+result yet no longer prints `(no output)` beside its row. The merged output fold stays.
 
-`bun test` 55 pass / 0 fail, `bun run typecheck` clean, `oxlint` exit 0; smoke prints
-`text task 2 agents · 5.2s`, `text <context>`, two `agent` rows (one `failed`) each over an `md`
-brief, then the `task output` fold.
+`bun test` 55 pass / 0 fail, `bun run typecheck` clean, `oxlint` exit 0. Smoke: `agents.spawn` inside
+fabric_exec returned a handle (`status=running`, runner `omp`, the session model), the child completed
+and replied `tern-omp-fabric`; a child spawned without an explicit `tools` list dies at startup with
+`Built-in tool unavailable in this session: find`, which is fabric's default tool list, not this card.
 
-## Revision 2026-11-01, twenty-fourth pass (no block for a capped details)
-
-Half the `omp.edit` audits in this session's transcript carry `details` as `{fabricTruncated,
-originalChars, preview}`: fabric replaces a details object serialising past 16 KB with its own JSON
-text, cut at 15 900 chars. A prefix of a diff reads as the whole change, so those calls now draw no
 output block and no `(no output)` marker either — `cappedDetails` is what tells `outputNode` and
 `callBlock` apart, and the line keeps just the tool, the file and the duration. `fileHref` turns that
 path into a `file://` URL — absolute as given, relative resolved against `process.cwd()` (the session's
