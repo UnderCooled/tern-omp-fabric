@@ -160,6 +160,28 @@ Rework omp-fabric's dashboard/settings/chat surfaces to be Tern-native (TSP `pre
 
 ---
 
+## Revision 2026-11-02, twenty-fifth pass (agent spawns get their own rows)
+
+A `task` audit carried no readable argument: fabric previews args at 2000 characters each, and
+`callDetail` fell through to the batch's shared `context` cut at 72, so the line named the spawn by a
+fragment of the sentence every agent shares and the briefs were nowhere on the card.
+
+`spawnedAgents` reads both shapes the task schema allows — `{ context, tasks[] }` and the flat
+`{ name, agent, task }` — and `callBlock` draws, under the call line, the shared context as one quiet
+wrapped line (role `omp-fabric.context`, two lines) and one `agent` node per spawn (role
+`omp-fabric.agent`): name, agent type, model, the brief's first line as the row's summary (with omp's
+`Complete assignment thoroughly:` prefix stripped, as its own agent row does), and the status from
+`result.details.results` matched by id or index — `pending` while there is no result at all, else the
+call's own success. The whole brief is the row's child as an `md` node (role `omp-fabric.assignment`),
+folded until the row is opened or the card is expanded. The line reads `task 2 agents · 5.2s` (or
+`task SeqAudit · 40ms` for one), and a spawn with no result yet no longer prints `(no output)` beside
+its rows. The merged `task output` fold stays: fabric keeps one result per call, so the reports cannot
+be split per agent.
+
+`bun test` 55 pass / 0 fail, `bun run typecheck` clean, `oxlint` exit 0; smoke prints
+`text task 2 agents · 5.2s`, `text <context>`, two `agent` rows (one `failed`) each over an `md`
+brief, then the `task output` fold.
+
 ## Revision 2026-11-01, twenty-fourth pass (no block for a capped details)
 
 Half the `omp.edit` audits in this session's transcript carry `details` as `{fabricTruncated,

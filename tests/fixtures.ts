@@ -131,6 +131,44 @@ export const slowAudit: FabricAudit = {
 	endedAt: 5200,
 };
 
+/** A task call: two agents spawned in one batch, one of them failed. */
+export const taskAudit: FabricAudit = {
+	ref: "task",
+	tool: "task",
+	provider: "omp",
+	success: true,
+	args: {
+		context: "Bun workspace; tests run with bun test.",
+		tasks: [
+			{
+				name: "ExploreRepos",
+				agent: "scout",
+				model: "sonnet",
+				task: "Find every caller of describeFabricResult and report the files with line numbers.",
+				solutionSpace: "one pass",
+			},
+			{
+				name: "PatchDocs",
+				agent: "mechanic",
+				task: "Update the README display table.\n\nThen run bun test.",
+				solutionSpace: "one fix",
+			},
+		],
+	},
+	result: {
+		ok: true,
+		output: "ExploreRepos: 3 files\nPatchDocs: README updated",
+		details: {
+			results: [
+				{ id: "ExploreRepos", index: 0, exitCode: 0 },
+				{ id: "PatchDocs", index: 1, exitCode: 1, error: "bun test failed" },
+			],
+		},
+	},
+	startedAt: 0,
+	endedAt: 5200,
+};
+
 /** A trace-only audit: the result did not survive the reload. */
 export const fromTraceAudit: FabricAudit = {
 	ref: "omp.grep",

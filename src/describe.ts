@@ -339,8 +339,8 @@ function callLabel(audit: FabricAudit): string {
 function callHead(audit: FabricAudit): Span[] {
 	const label = callLabel(audit);
 	const head: Span[] = [span(label, "strong")];
-	// A bash command is a program, not a name: it goes in a code block of its own.
-	const detail = label === "bash" ? undefined : callDetail(audit);
+	// A bash command and a spawned agent's brief are bodies of their own, not labels.
+	const detail = label === "bash" ? undefined : (spawnLabel(audit) ?? callDetail(audit));
 	if (detail !== undefined) {
 		// An edit whose change fabric capped has no diff to show: the file name is how
 		// the reader sees the change, so it opens the file instead.
@@ -466,6 +466,107 @@ function fencedCommand(command: string): string {
 	return fence + "bash\n" + command.replace(/\n+$/, "") + "\n" + fence;
 }
 
+
+/** A subagent a `task` call spawns, as the model asked for it. */
+type SpawnedAgent = { name: string; agent?: string; model?: string; brief: string };
+
+/** The prefix omp's own agent row strips before it summarizes a brief. */
+const ASSIGNMENT_PREFIX = /^\s*Complete assignment thoroughly:\s*/i;
+
+/**
+ * The agents a `task` call spawns: the batch form (`{ context, tasks[] }`) or
+ * the flat single-agent one. The brief is fabric's own preview of it -- the first
+ * 2000 characters -- which is still the assignment, not a label cut to a line.
+ */
+function spawnedAgents(audit: FabricAudit): SpawnedAgent[] {
+	if (callLabel(audit) !== "task") return [];
+	const args = audit.args ?? {};
+	const entries: unknown[] = Array.isArray(args.tasks) ? args.tasks : [args];
+	const spawns: SpawnedAgent[] = [];
+	for (const entry of entries) {
+		if (!isRecord(entry) || typeof entry.task !== "string" || entry.task.trim() === "") continue;
+		const name = typeof entry.name === "string" && entry.name.trim() !== "" ? entry.name.trim() : undefined;
+		const agent = typeof entry.agent === "string" && entry.agent.trim() !== "" ? entry.agent.trim() : undefined;
+		const model = typeof entry.model === "string" && entry.model.trim() !== "" ? entry.model.trim() : undefined;
+		spawns.push({
+			name: name ?? (entries.length > 1 ? `#${spawns.length + 1}` : "agent"),
+			...(agent === undefined ? {} : { agent }),
+			...(model === undefined ? {} : { model }),
+			brief: entry.task.replace(/\r\n?/g, "\n").replace(/\n+$/, ""),
+		});
+	}
+	return spawns;
+}
+
+/** What a task call spawns, as its line names it: the one agent, or how many. */
+function spawnLabel(audit: FabricAudit): string | undefined {
+	const spawns = spawnedAgents(audit);
+	if (spawns.length === 0) return undefined;
+	return spawns.length === 1 ? spawns[0]!.name : countLabel(spawns.length, "agent");
+}
+
+/** One spawned agent's outcome: its own row from the result's details, else the call's. */
+function agentStatus(
+	audit: FabricAudit,
+	name: string,
+	index: number,
+): "pending" | "done" | "failed" | "aborted" {
+	const result = audit.result;
+	if (result === undefined || result === null) return "pending";
+	const details = isRecord(result) && isRecord(result.details) ? result.details : undefined;
+	const results: unknown[] = details !== undefined && Array.isArray(details.results) ? details.results : [];
+	const own = results.find(entry => isRecord(entry) && (entry.id === name || entry.index === index));
+	if (isRecord(own)) {
+		if (own.aborted === true) return "aborted";
+		if (typeof own.exitCode === "number" && own.exitCode !== 0) return "failed";
+		return typeof own.error === "string" ? "failed" : "done";
+	}
+	return audit.success === false ? "failed" : "done";
+}
+
+/**
+ * One spawned agent: the row names it, and the fold under it holds the whole
+ * brief as the model wrote it, drawn as markdown the way omp's own agent card
+ * draws an assignment. A brief is long, so the row starts folded.
+ */
+function agentNode(
+	audit: FabricAudit,
+	spawn: SpawnedAgent,
+	call: number,
+	index: number,
+	options: DescribeOptions,
+): NativeChild {
+	const summary = firstLine(spawn.brief.replace(ASSIGNMENT_PREFIX, ""));
+	return {
+		k: "agent",
+		key: `call:${call}:agent:${index}`,
+		p: {
+			name: spawn.name,
+			...(spawn.agent === undefined ? {} : { agent: spawn.agent }),
+			...(spawn.model === undefined ? {} : { model: spawn.model }),
+			...(summary === "" ? {} : { task: cut(summary, DETAIL_CHARS) }),
+			status: agentStatus(audit, spawn.name, index),
+			collapsible: true,
+			collapsed: options.expanded !== true,
+			role: "omp-fabric.agent",
+		},
+		c: [
+			{ k: "md", key: `call:${call}:agent:${index}:brief`, p: { text: spawn.brief, role: "omp-fabric.assignment" } },
+		],
+	};
+}
+
+/** The batch's shared context, as omp's own card shows it: two quiet wrapped lines. */
+function contextNode(audit: FabricAudit, index: number): NativeChild | undefined {
+	const context = audit.args?.context;
+	if (typeof context !== "string" || context.trim() === "") return undefined;
+	return {
+		k: "text",
+		key: `call:${index}:context`,
+		p: { spans: [span(context.trim(), "muted")], wrap: "word", lines: 2, role: "omp-fabric.context" },
+	};
+}
+
 /** The fact a call's own rule puts on its line, for a result that has one. */
 function headFact(display: ToolDisplay, result: unknown): string | undefined {
 	const factOf = display.fact;
@@ -485,9 +586,11 @@ function headFact(display: ToolDisplay, result: unknown): string | undefined {
 function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild[] {
 	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
 	const body = outputNode(audit, index, options, display.fold);
+	const spawns = spawnedAgents(audit);
 	const head = callHead(audit);
-	// A capped details was not "no output": it was output nobody can vouch for.
-	if (body === undefined && !cappedDetails(audit.result)) {
+	// A capped details was not "no output": it was output nobody can vouch for, and
+	// a spawn with no result yet is shown by its own rows, not by that marker.
+	if (body === undefined && !cappedDetails(audit.result) && spawns.length === 0) {
 		const fact = headFact(display, audit.result);
 		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
 	}
@@ -515,6 +618,15 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 				},
 			],
 		});
+	}
+	// What the model asked each agent for: the batch's shared context, then one row
+	// per spawn, whose own fold holds the whole brief.
+	if (spawns.length > 0) {
+		const context = contextNode(audit, index);
+		if (context !== undefined) nodes.push(context);
+		for (let spawn = 0; spawn < spawns.length; spawn += 1) {
+			nodes.push(agentNode(audit, spawns[spawn]!, index, spawn, options));
+		}
 	}
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));

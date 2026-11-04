@@ -113,6 +113,15 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   and a ring from `tern/style.css`. It wraps instead of scrolling sideways and sits two cells in
   from the call line, under the label rather than out past it. The line keeps the tool and the
   duration; the output fold follows as for any other call.
+- A `task` call shows what it spawned instead of a cut of the batch's shared context: the line reads
+  `task 2 agents · 5.2s` (or `task SeqAudit · 40ms` for one), the shared context sits under it as one
+  quiet wrapped line, and each agent gets a row of its own — name, agent type, model, the brief's first
+  line, and `done`/`failed`/`pending` from the result's own per-agent records when fabric kept them.
+  Opening a row shows the whole brief as markdown. The brief is fabric's own 2000-character preview of
+  the argument, so a very long assignment is shown up to that cut; a batch whose arguments pass fabric's
+  16 KB preview cap arrives with no readable `tasks` list, and the line falls back to the shared context.
+  The merged `task output` fold stays: fabric records one result per call, so the agents' reports cannot
+  be split back apart.
 - Display is per tool. `read` and `write` carry their fact on the call line — `3 lines`, `42 bytes` — and
   draw no output at all: a file's own text is data, not something anyone reads back in a
   transcript. Everything else keeps its fold, and `edit` gets the diff. The table lives in `TOOL_DISPLAY`
