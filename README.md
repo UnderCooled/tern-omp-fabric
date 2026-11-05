@@ -113,8 +113,22 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   and a ring from `tern/style.css`. It wraps instead of scrolling sideways and sits two cells in
   from the call line, under the label rather than out past it. The line keeps the tool and the
   duration; the output fold follows as for any other call.
+- A provider call is named by its ref, not its bare tool name, and carries the fact its provider joins:
+  `mesh.read builds · 12`, `mcp.$call github.search`, `fabric.discovery.list omp · tools · 3`,
+  `fabric.workflow.parallel 3 items · 2 stages`, `agents.list · 7`. The table lives in
+  `PROVIDER_DETAILS` in `src/describe.ts`; a provider it does not name falls back to the one argument
+  that names the call. A provider's `read` is not omp's `read`: the core-tool rules only apply to
+  `omp` (or unnamed) calls.
+- `grep` keeps the grouping fabric draws: Tern's `tree` node with one group per file and one row per
+  match, the line number padded, a `│` for a match and a `┆` for context. `find` and `ls` nest their
+  paths the same way, directories as open nodes. Both cap at 200 rows and say how many were left.
+- An `agents` call that is not a spawn still shows its agent: `status`, `wait`, `ask` and friends put
+  the handle on an `agent` row, `list`, `actors`, `models` and `peers` draw one `item` per entry with
+  its state.
+- A judgment call shows its verdict as a badge — `yes · 93%`, the choice, or the score — with one line
+  per answered question and the backend in the fold's head, instead of the JSON envelope.
 - A spawn — `agents.spawn`, `agents.run`, `agents.handoff` — shows the agent it started instead of a
-  cut of its brief: the line reads `spawn ExploreRepos · 5.2s`, and the row under it names the runner and
+  cut of its brief: the line reads `agents.spawn ExploreRepos · 5.2s`, and the row under it names the runner and
   model, carries the brief's first line, and opens onto the whole brief as markdown. The row's status
   comes from the handle fabric returned (`running` reads as pending, `completed` as done), falling back
   to the call's own success. The brief is fabric's own 2000-character preview of the `task` argument, so
@@ -127,6 +141,14 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   envelope's `output` field when the tool answers with one, its string when it returns text, its
   printed JSON otherwise — and it lives in a fold named and counted after its call (`bash output · 12
   lines`), so a column of folds still says which call each one came from.
+- A write still running shows the content it is about to write: fabric previews the `content`
+  argument from the call itself, so the card carries a `preview` fold with the file's own grammar
+  before the write lands. The preview is a prefix — fabric cuts `content` at 16000 characters — and
+  the fold's head says `first 16000 chars` when the cut hit. Once the call returns, the preview is
+  gone and the line carries the byte count instead.
+- When a program returns fewer lines than its nested reads handed it, the card says so on a warning
+  row — `→ 12 of 40 lines to model` — mirroring omp's own read notice, because the model sees only
+  what the program returned.
 - The program's own returned text is not drawn. fabric hands it over as one blob — its `logs` and
   the returned value joined, with no attribution to a call — which is exactly the merged output
   this card used to show. What a call produced is read from its own audit instead.

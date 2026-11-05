@@ -361,7 +361,7 @@ describe("a spawn shows the agent it started", () => {
 	}
 
 	test("the line names the agent instead of cutting the task to 72 characters", () => {
-		expect(joined(textSpans(callLine(render(spawnAudit))))).toBe("spawn ExploreRepos · 5.2s");
+		expect(joined(textSpans(callLine(render(spawnAudit))))).toBe("agents.spawn ExploreRepos · 5.2s");
 	});
 
 	test("the spawn gets a row naming the runner and model, with the whole brief under it", () => {
@@ -402,7 +402,7 @@ describe("a spawn shows the agent it started", () => {
 			result: { id: "01a1589d", name: "ExploreRepos", status: "completed", runner: "omp" },
 			endedAt: 40,
 		});
-		expect(joined(textSpans(callLine(view)))).toBe("run ExploreRepos · 40ms");
+		expect(joined(textSpans(callLine(view)))).toBe("agents.run ExploreRepos · 40ms");
 		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("done");
 	});
 
@@ -434,9 +434,35 @@ describe("how a call's output is drawn", () => {
 	}
 
 	test("text is drawn as a terminal, not as highlighted JSON", () => {
-		expect(outputText(unwrap(auditsOf(fabricDetails)[0], "grep audit"))).toBe(
-			"src/a.ts:12: foo\nsrc/b.ts:3: food\nsrc/c.ts:88: foobar",
+		expect(
+			outputText({
+				ref: "omp.bash",
+				tool: "bash",
+				provider: "omp",
+				success: true,
+				args: { command: "echo hi" },
+				result: "hi",
+				startedAt: 0,
+				endedAt: 10,
+			}),
+		).toBe("hi");
+	});
+
+	test("a grep's matches are grouped by file, not dumped as lines", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{ content: [], details: { ...fabricDetails, audits: [unwrap(auditsOf(fabricDetails)[0], "grep audit")] } },
+				{ expanded: true },
+				fabricCallArgs,
+			),
+			"grep view",
 		);
+		const fold = unwrap(byKey(view.body, "output:0"), "output fold");
+		const tree = unwrap(byKind(fold.c, "tree"), "grep tree");
+		expect(props(tree).role).toBe("omp-fabric.grep");
+		const files = props(tree).nodes as { label: unknown; children?: unknown[] }[];
+		expect(files.map(file => joined(spanList(file.label)))).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+		expect(files.map(file => file.children?.length)).toEqual([1, 1, 1]);
 	});
 
 	test("a structured result is terminal text too, never the JSON viewer", () => {
@@ -692,3 +718,256 @@ describe("trace-only details", () => {
 		expect(kindList(bare.body)).toEqual(["section"]);
 	});
 });
+
+describe("provider rows", () => {
+	function line(audit: FabricAudit): string {
+		const view = unwrap(
+			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, options, fabricCallArgs),
+			"provider view",
+		);
+		const call = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		return joined(textSpans(call));
+	}
+
+	test("a mesh read names its topic and how many entries came back", () => {
+		expect(
+			line({
+				ref: "mesh.read",
+				tool: "read",
+				provider: "mesh",
+				args: { topic: "builds" },
+				result: Array.from({ length: 12 }, (_, at) => at),
+				success: true,
+			}),
+		).toBe("mesh.read builds · 12");
+	});
+
+	test("an mcp call names the server and the tool it called", () => {
+		expect(
+			line({
+				ref: "mcp.$call",
+				tool: "$call",
+				provider: "mcp",
+				args: { server: "github", tool: "search" },
+				result: { ok: true },
+				success: true,
+			}),
+		).toBe("mcp.$call github.search");
+	});
+
+	test("discovery and workflow rows carry their counts", () => {
+		expect(
+			line({
+				ref: "fabric.discovery.list",
+				tool: "discovery.list",
+				provider: "fabric",
+				args: { provider: "omp", namespace: "tools" },
+				result: [1, 2, 3],
+				success: true,
+			}),
+		).toBe("fabric.discovery.list omp · tools · 3");
+		expect(
+			line({
+				ref: "fabric.workflow.parallel",
+				tool: "workflow.parallel",
+				provider: "fabric",
+				args: { itemCount: 3, stageCount: 2 },
+				result: { ok: true },
+				success: true,
+			}),
+		).toBe("fabric.workflow.parallel 3 items · 2 stages");
+	});
+
+	test("a mesh read is not drawn as a core read", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						success: true,
+						audits: [
+							{ ref: "mesh.read", tool: "read", provider: "mesh", args: { topic: "builds" }, result: ["a", "b"], success: true },
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"mesh view",
+		);
+		// The core read rule would drop the fold and put a line count on the row.
+		expect(byKey(view.body, "output:0")).toBeDefined();
+	});
+});
+
+describe("agents calls that are not spawns", () => {
+	function view(audit: FabricAudit): NativeToolView {
+		return unwrap(
+			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, options, fabricCallArgs),
+			"agents view",
+		);
+	}
+
+	test("status names the agent on a row", () => {
+		const row = unwrap(
+			nodes(
+				view({
+					ref: "agents.status",
+					tool: "status",
+					provider: "agents",
+					args: { id: "01a1589d" },
+					result: { id: "01a1589d", name: "ExploreRepos", status: "running", runner: "omp", model: "anthropic/x" },
+					success: true,
+				}).body,
+			).find(node => node.k === "agent"),
+			"agent row",
+		);
+		expect(props(row)).toMatchObject({ name: "ExploreRepos", agent: "omp", model: "anthropic/x", status: "pending" });
+	});
+
+	test("a list draws one item per agent, with its state", () => {
+		const list = unwrap(
+			nodes(
+				view({
+					ref: "agents.list",
+					tool: "list",
+					provider: "agents",
+					result: [
+						{ name: "one", status: "completed" },
+						{ name: "two", status: "failed" },
+					],
+					success: true,
+				}).body,
+			).find(node => node.k === "list"),
+			"agents list",
+		);
+		expect(nodes(list.c).map(item => props(item).label)).toEqual(["one", "two"]);
+		expect(nodes(list.c).map(item => props(item).detail)).toEqual(["done", "failed"]);
+	});
+});
+
+describe("judgment answers", () => {
+	const view = unwrap(
+		describeFabricResult(
+			{
+				content: [],
+				details: {
+					success: true,
+					audits: [
+						{
+							ref: "judgment.ask",
+							tool: "ask",
+							provider: "judgment",
+							args: { questions: { q: { type: "bool", instructions: "safe to ship?" } } },
+							result: { ok: true, backend: "anthropic/claude", answers: { q: { type: "bool", bool: 0.93 } } },
+							success: true,
+						},
+					],
+				},
+			},
+			options,
+			fabricCallArgs,
+		),
+		"judgment view",
+	);
+	const section = unwrap(byKey(view.body, "output:0:judgment"), "judgment section");
+
+	test("the verdict is a badge, not a JSON dump", () => {
+		expect(props(section).role).toBe("omp-fabric.judgment");
+		expect(props(unwrap(byKind(section.c, "badge"), "verdict badge")).text).toBe("yes · 93%");
+		expect(byKind(section.c, "ansi")).toBeUndefined();
+	});
+
+	test("the head names the backend and how many answers came back", () => {
+		expect(joined(headSpans(section))).toBe("judgment · claude · 1 answer");
+	});
+
+	test("each answered question is one line", () => {
+		expect(joined(textSpans(unwrap(byKind(section.c, "text"), "answer line")))).toBe("• q: yes · 93%");
+	});
+});
+
+describe("a write's preview", () => {
+	function view(args: Record<string, unknown>, result?: unknown): NativeToolView {
+		return unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						success: true,
+						audits: [{ ref: "omp.write", tool: "write", provider: "omp", args, success: true, ...(result === undefined ? {} : { result }) }],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"preview view",
+		);
+	}
+
+	test("a running write shows the content it is about to write", () => {
+		const preview = unwrap(byKey(view({ path: "src/a.ts", content: "export const a = 1;\n" }).body, "call:0:preview"), "preview fold");
+		const code = unwrap(byKind(preview.c, "code"), "preview code");
+		expect(props(code).text).toBe("export const a = 1;");
+		expect(props(code).path).toBe("src/a.ts");
+		expect(joined(headSpans(preview))).toBe("preview · 2 lines");
+	});
+
+	test("a capped preview says it is only a prefix", () => {
+		const content = "x".repeat(16_000);
+		const preview = unwrap(byKey(view({ path: "src/a.ts", content }).body, "call:0:preview"), "preview fold");
+		expect(joined(headSpans(preview))).toContain("first 16000 chars");
+	});
+
+	test("a write that already returned says its bytes, with no preview", () => {
+		const done = view({ path: "src/a.ts", content: "x" }, "Successfully wrote 1 bytes to src/a.ts");
+		expect(byKey(done.body, "call:0:preview")).toBeUndefined();
+	});
+});
+
+describe("what reached the model", () => {
+	test("a program that returns fewer lines than it read says so", () => {
+		const read: FabricAudit = {
+			ref: "omp.read",
+			tool: "read",
+			provider: "omp",
+			success: true,
+			args: { path: "src/a.ts" },
+			result: Array.from({ length: 40 }, (_, at) => "line " + at).join("\n"),
+		};
+		const view = unwrap(
+			describeFabricResult(
+				{ content: [{ type: "text", text: "a\nb\nc" }], details: { audits: [read] } },
+				options,
+				fabricCallArgs,
+			),
+			"hint view",
+		);
+		const hint = unwrap(
+			nodes(view.body).find(node => textSpans(node).some(span => span.t.startsWith("→"))),
+			"read hint",
+		);
+		expect(joined(textSpans(hint))).toBe("→ 3 of 40 lines to model");
+	});
+
+	test("a program that returns everything it read says nothing", () => {
+		const read: FabricAudit = {
+			ref: "omp.read",
+			tool: "read",
+			provider: "omp",
+			success: true,
+			args: { path: "src/a.ts" },
+			result: "a\nb\nc",
+		};
+		const view = unwrap(
+			describeFabricResult(
+				{ content: [{ type: "text", text: "a\nb\nc" }], details: { audits: [read] } },
+				options,
+				fabricCallArgs,
+			),
+			"no-hint view",
+		);
+		expect(nodes(view.body).some(node => textSpans(node).some(span => span.t.startsWith("→")))).toBe(false);
+	});
+});
+

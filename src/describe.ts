@@ -14,6 +14,7 @@
  */
 import type { NativeChild } from "@oh-my-pi/pi-tui";
 import type { NativeToolHead, NativeToolView } from "@oh-my-pi/pi-tui/tools";
+import { grepTree, pathTree } from "./tree.js";
 
 /** A styled run; structurally TspSpan, declared here so no pi-wire import is needed. */
 type Span = { t: string; s?: string; href?: string };
@@ -154,8 +155,140 @@ const CORE_DETAILS: Record<string, (args: Record<string, unknown>) => string | u
 	bash: args => commandText(args.command),
 };
 
+const nonEmpty = (value: unknown): string | undefined => {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed === "" ? undefined : trimmed;
+};
+
+/** One line, capped: a provider row names a call, it does not paste it. */
+const oneLine = (value: string, max: number): string => {
+	const single = value.replace(/\s+/g, " ").trim();
+	return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
+};
+
+/** How many entries a provider answered with, when it answered with a list. */
+const countOf = (result: unknown): string | undefined =>
+	Array.isArray(result) ? String(result.length) : undefined;
+
+const shortId = (value: unknown): string | undefined =>
+	typeof value === "string" && value !== "" ? value.slice(0, 8) : undefined;
+
+/** The questions a judgment call asked, and the backend that answered them. */
+function judgmentDetail(args: Record<string, unknown>, result: unknown): string | undefined {
+	const questions = isRecord(args.questions) ? args.questions : undefined;
+	let asked: string | undefined;
+	if (questions !== undefined) {
+		const keys = Object.keys(questions);
+		const only = keys.length === 1 ? questions[keys[0]!] : undefined;
+		const instructions = isRecord(only) ? nonEmpty(only.instructions) : undefined;
+		if (keys.length === 1) asked = instructions === undefined ? "1 question" : oneLine(instructions, 44);
+		else if (keys.length > 1) asked = countLabel(keys.length, "question");
+	}
+	let backend: string | undefined;
+	if (isRecord(result)) {
+		backend =
+			typeof result.backend === "string"
+				? (result.backend.split("/").pop() ?? result.backend)
+				: result.ok === false
+					? nonEmpty(result.reason)
+					: undefined;
+	}
+	return pair(asked, backend, " · ");
+}
+
+/** What a provider call's row says after its label (fabric's own `providerCallDetail`). */
+type ProviderDetail = (tool: string, args: Record<string, unknown>, result: unknown) => string | undefined;
+
+const PROVIDER_DETAILS: Record<string, ProviderDetail> = {
+	judgment: (tool, args, result) => (tool === "ask" ? judgmentDetail(args, result) : undefined),
+	agents: (tool, args, result) => {
+		const name = nonEmpty(args.name);
+		const id = shortId(args.id);
+		const message = nonEmpty(args.message);
+		switch (tool) {
+			case "create":
+				return name;
+			case "remove":
+			case "stop":
+			case "cleanup":
+			case "wait":
+			case "status":
+			case "actorStatus":
+			case "messages":
+				return name ?? id;
+			case "ask":
+			case "tell":
+				return pair(name ?? id, message === undefined ? undefined : oneLine(message, 48), " ");
+			case "actors":
+			case "list":
+			case "models":
+			case "peers":
+				return countOf(result);
+			default:
+				return name ?? id;
+		}
+	},
+	mesh: (tool, args, result) => {
+		switch (tool) {
+			case "publish":
+				return nonEmpty(args.topic);
+			case "read":
+				return pair(nonEmpty(args.topic), countOf(result), " · ");
+			case "get":
+			case "put":
+			case "delete":
+				return nonEmpty(args.key);
+			case "list":
+				return pair(nonEmpty(args.prefix), countOf(result), " · ");
+			case "members":
+				return countOf(result);
+			default:
+				return undefined;
+		}
+	},
+	mcp: (tool, args, result) => {
+		switch (tool) {
+			case "$call":
+				return pair(nonEmpty(args.server), nonEmpty(args.tool), ".");
+			case "$register":
+				return nonEmpty(args.name);
+			case "$servers":
+				return countOf(result);
+			default:
+				return undefined;
+		}
+	},
+	fabric: (tool, args, result) => {
+		switch (tool) {
+			case "discovery.providers":
+			case "discovery.models":
+			case "discovery.search":
+				return countOf(result);
+			case "discovery.list": {
+				const detail = [nonEmpty(args.provider), nonEmpty(args.namespace), countOf(result)]
+					.filter(Boolean)
+					.join(" · ");
+				return detail === "" ? undefined : detail;
+			}
+			case "discovery.describe":
+				return nonEmpty(args.ref);
+			case "workflow.parallel":
+			case "workflow.pipeline": {
+				const items = typeof args.itemCount === "number" ? countLabel(args.itemCount, "item") : undefined;
+				const stages = typeof args.stageCount === "number" ? countLabel(args.stageCount, "stage") : undefined;
+				return pair(items, stages, " · ");
+			}
+			default:
+				return undefined;
+		}
+	},
+};
+
 /** The core tool a call names: `grep`, from `grep` or omp's namespaced `omp.grep`. */
 function coreToolName(audit: FabricAudit): string | undefined {
+	const provider = audit.provider?.toLowerCase();
+	if (provider !== undefined && provider !== "omp") return undefined;
 	const raw = (audit.tool ?? audit.ref ?? "").toLowerCase();
 	if (raw === "") return undefined;
 	if (CORE_DETAILS[raw] !== undefined) return raw;
@@ -163,12 +296,17 @@ function coreToolName(audit: FabricAudit): string | undefined {
 	return leaf !== undefined && CORE_DETAILS[leaf] !== undefined ? leaf : undefined;
 }
 
-/** The one argument that names the call. */
+/** The one argument that names the call: a core tool's own title, else its provider's row. */
 function callDetail(audit: FabricAudit): string | undefined {
 	const args = audit.args ?? {};
 	const name = coreToolName(audit);
 	const named = name === undefined ? undefined : CORE_DETAILS[name]?.(args);
 	if (named !== undefined) return named;
+	const provider = audit.provider?.toLowerCase();
+	const tool = audit.tool ?? (audit.ref ?? "").split(".")[1];
+	const fromProvider =
+		provider === undefined || tool === undefined ? undefined : PROVIDER_DETAILS[provider]?.(tool, args, audit.result);
+	if (fromProvider !== undefined) return fromProvider;
 	for (const key of ["path", "pattern", "query", "ref", "name", "task", "topic", "key", "op", "command"]) {
 		const value = args[key];
 		if (key === "command") {
@@ -328,10 +466,10 @@ function editDiff(result: unknown): { hunks: DiffHunk[]; path?: string } | undef
 	return path === undefined ? { hunks: resolved } : { hunks: resolved, path };
 }
 
-/** What the call ran, as the head names it: `grep`, `read`, `bash`. */
+/** What the call ran, as the head names it: `grep` for a core tool, else its ref (`mesh.read`). */
 function callLabel(audit: FabricAudit): string {
-	const raw = firstLine(audit.tool ?? audit.ref ?? "call");
-	const label = coreToolName(audit) ?? raw;
+	const ref = firstLine(audit.ref ?? audit.tool ?? "call");
+	const label = coreToolName(audit) ?? ref;
 	return label === "" ? "call" : label;
 }
 
@@ -353,6 +491,84 @@ function callHead(audit: FabricAudit): Span[] {
 	if (took !== undefined) head.push(span(` · ${took}`, "muted"));
 	if (audit.success === false) head.push(span(" · failed", "error"));
 	return head;
+}
+
+/** A judgment's verdict and the bullets under it, as the answer itself reads. */
+type JudgmentAnswer = { verdict: string; bullets: string[]; tone: "success" | "error" };
+
+function judgmentAnswer(result: unknown): JudgmentAnswer | undefined {
+	if (!isRecord(result)) return undefined;
+	if (result.ok === false) {
+		const reason = nonEmpty(result.reason) ?? "failed";
+		const detail = nonEmpty(result.detail);
+		return { verdict: reason, bullets: detail === undefined ? [] : [detail], tone: "error" };
+	}
+	if (result.ok !== true || !isRecord(result.answers)) return undefined;
+	const answers = Object.entries(result.answers);
+	const bullets: string[] = [];
+	let verdict: string | undefined;
+	for (const [id, value] of answers) {
+		if (!isRecord(value)) continue;
+		if (value.type === "bool" && typeof value.bool === "number") {
+			const yes = value.bool >= 0.5;
+			const percent = Math.round((yes ? value.bool : 1 - value.bool) * 100);
+			bullets.push(id + ": " + (yes ? "yes" : "no") + " · " + percent + "%");
+			if (answers.length === 1) verdict = (yes ? "yes" : "no") + " · " + percent + "%";
+		} else if (value.type === "choice" && typeof value.choice === "string") {
+			const confidence = typeof value.confidence === "number" ? " · " + Math.round(value.confidence * 100) + "%" : "";
+			bullets.push(id + ": " + value.choice + confidence);
+			if (answers.length === 1) verdict = value.choice + confidence;
+		} else if (value.type === "score" && typeof value.score === "number") {
+			bullets.push(id + ": " + value.score);
+			if (answers.length === 1) verdict = String(value.score);
+		}
+	}
+	if (verdict === undefined && bullets.length === 0) return undefined;
+	return { verdict: verdict ?? countLabel(bullets.length, "answer"), bullets, tone: "success" };
+}
+
+/**
+ * A judgment answers with a verdict and its bullets, not with a JSON dump: the
+ * verdict is the badge, every question it answered is one line under it.
+ */
+function judgmentOutput(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild | undefined {
+	const answer = judgmentAnswer(audit.result);
+	if (answer === undefined) return undefined;
+	const raw = isRecord(audit.result) ? nonEmpty(audit.result.backend) : undefined;
+	const backend = raw === undefined ? undefined : (raw.split("/").pop() ?? raw);
+	const head: Span[] = [span("judgment", "muted")];
+	if (backend !== undefined) head.push(span(" · " + backend, "muted"));
+	if (answer.bullets.length > 0) head.push(span(" · " + countLabel(answer.bullets.length, "answer"), "muted"));
+	return {
+		k: "section",
+		key: `output:${index}:judgment`,
+		p: {
+			head,
+			role: "omp-fabric.judgment",
+			collapsible: true,
+			collapsed: options.expanded !== true && !slowCall(audit),
+		},
+		c: [
+			{
+				k: "badge",
+				key: `output:${index}:verdict`,
+				p: { text: answer.verdict, tone: answer.tone, role: "omp-fabric.verdict" },
+			},
+			...answer.bullets.map((bullet, at) => ({
+				k: "text" as const,
+				key: `output:${index}:answer:${at}`,
+				p: { spans: [span("• ", "muted"), span(bullet)], role: "omp-fabric.answer" },
+			})),
+		],
+	};
+}
+
+/** A result whose lines are structured — a grep's file groups, a find's paths — drawn as a tree. */
+function treeOf(audit: FabricAudit, text: string, index: number): NativeChild | undefined {
+	const label = callLabel(audit).toLowerCase();
+	if (label === "grep") return grepTree(text, `output:${index}:grep`);
+	if (label === "find" || label === "ls") return pathTree(text, `output:${index}:paths`);
+	return undefined;
 }
 
 /**
@@ -377,6 +593,9 @@ function outputNode(
 		const size = typeof result.originalChars === "number" ? result.originalChars + " chars" : "too large";
 		return muted("result truncated by fabric (" + size + ")");
 	}
+	// A judgment answers with a verdict, not with the JSON envelope it arrived in.
+	const judgment = audit.provider?.toLowerCase() === "judgment" ? judgmentOutput(audit, index, options) : undefined;
+	if (judgment !== undefined) return judgment;
 	// An edit answers with a diff: Tern draws that as a diff, not as a block of text.
 	// When fabric capped that answer only a prefix survives, and a prefix reads as the
 	// whole change; the call line names the file and the block stays away.
@@ -391,6 +610,9 @@ function outputNode(
 	if (!fold) return undefined;
 	const lines =
 		diff === undefined ? (text ?? "").split("\n").length : diff.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
+	// A grep's matches and a find's paths have a shape the text already carries:
+	// the tree is that shape, and the reader stops parsing lines by eye.
+	const tree = diff === undefined && text !== undefined ? treeOf(audit, text, index) : undefined;
 	return {
 		k: "section",
 		key: `output:${index}`,
@@ -403,9 +625,10 @@ function outputNode(
 			collapsed: options.expanded !== true && !slowCall(audit),
 		},
 		c: [
-			diff === undefined
-				? { k: "ansi", key: `output:${index}:text`, p: { text: text ?? "", role: "omp-fabric.output-text" } }
-				: {
+			tree ??
+				(diff === undefined
+					? { k: "ansi", key: `output:${index}:text`, p: { text: text ?? "", role: "omp-fabric.output-text" } }
+					: {
 						k: "diff",
 						key: `output:${index}:diff`,
 						p: {
@@ -414,7 +637,7 @@ function outputNode(
 							mode: "unified" as const,
 							role: "omp-fabric.output-diff",
 						},
-					},
+					}),
 		],
 	};
 }
@@ -493,12 +716,6 @@ const AGENT_STATUS: Record<string, SpawnedAgent["status"]> = {
 	timed_out: "aborted",
 };
 
-const nonEmpty = (value: unknown): string | undefined => {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	return trimmed === "" ? undefined : trimmed;
-};
-
 /**
  * The child an `agents.spawn`/`run`/`handoff` call started. The call takes one
  * `task`, so there is one agent, and the result is its handle: that names it,
@@ -506,8 +723,8 @@ const nonEmpty = (value: unknown): string | undefined => {
  * is fabric's own preview of the task -- the first 2000 characters.
  */
 function spawnedAgent(audit: FabricAudit): SpawnedAgent | undefined {
-	if (audit.provider !== "agents") return undefined;
-	const tool = callLabel(audit).toLowerCase();
+	if (audit.provider?.toLowerCase() !== "agents") return undefined;
+	const tool = toolLeaf(audit);
 	if (!SPAWN_TOOLS.has(tool)) return undefined;
 	const args = audit.args ?? {};
 	const handle = isRecord(audit.result) ? audit.result : undefined;
@@ -533,6 +750,59 @@ function spawnedAgent(audit: FabricAudit): SpawnedAgent | undefined {
 /** What the call spawned, as its line names it: the one agent. */
 function spawnLabel(audit: FabricAudit): string | undefined {
 	return spawnedAgent(audit)?.name;
+}
+
+/** The agents calls whose answer is one agent, and the ones that answer with a list. */
+const AGENT_ONE_TOOLS = new Set(["status", "actorStatus", "wait", "ask", "tell", "create", "remove", "stop", "cleanup"]);
+const AGENT_LIST_TOOLS = new Set(["actors", "list", "models", "peers"]);
+
+/** The provider tool a call names, without the provider prefix: `status` from `agents.status`. */
+function toolLeaf(audit: FabricAudit): string {
+	return callLabel(audit).split(".").pop()?.toLowerCase() ?? "";
+}
+
+/** The agent an agents call reports on: a status handle, not a spawn. */
+function reportedAgent(audit: FabricAudit): SpawnedAgent | undefined {
+	if (audit.provider?.toLowerCase() !== "agents" || !AGENT_ONE_TOOLS.has(toolLeaf(audit))) return undefined;
+	const handle = audit.result;
+	if (!isRecord(handle)) return undefined;
+	const name = nonEmpty(handle.name) ?? shortId(handle.id);
+	if (name === undefined) return undefined;
+	const agent = nonEmpty(handle.runner);
+	const model = nonEmpty(handle.model);
+	const reported = AGENT_STATUS[String(handle.status ?? "").toLowerCase()];
+	return {
+		name,
+		...(agent === undefined ? {} : { agent }),
+		...(model === undefined ? {} : { model }),
+		brief: "",
+		status: reported ?? (audit.success === false ? "failed" : "done"),
+	};
+}
+
+/** The agents an agents call listed: one row each, named the way its own handle names it. */
+function agentListNode(audit: FabricAudit, index: number): NativeChild | undefined {
+	if (audit.provider?.toLowerCase() !== "agents" || !AGENT_LIST_TOOLS.has(toolLeaf(audit))) return undefined;
+	if (!Array.isArray(audit.result)) return undefined;
+	const rows = audit.result.filter(isRecord);
+	if (rows.length === 0) return undefined;
+	return {
+		k: "list",
+		key: `call:${index}:agents`,
+		p: { role: "omp-fabric.agents" },
+		c: rows.map((row, at) => {
+			const status = AGENT_STATUS[String(row.status ?? "").toLowerCase()] ?? "done";
+			const model = nonEmpty(row.model);
+			return {
+				k: "item" as const,
+				key: `call:${index}:agents:${at}`,
+				p: {
+					label: nonEmpty(row.name) ?? shortId(row.id) ?? "agent",
+					detail: model === undefined ? status : status + " · " + model,
+				},
+			};
+		}),
+	};
 }
 
 /**
@@ -564,6 +834,40 @@ function agentNode(spawn: SpawnedAgent, call: number, options: DescribeOptions):
 	};
 }
 
+/** fabric caps a write's previewed content at this many characters. */
+const WRITE_PREVIEW_CHARS = 16_000;
+
+/**
+ * The content a write call is about to write, while the call still runs: fabric
+ * previews it from the arguments, so the card shows the change before it lands.
+ * The preview is a prefix of the file, and says so when fabric cut it.
+ */
+function writePreview(audit: FabricAudit, index: number, options: DescribeOptions): NativeChild | undefined {
+	if (coreToolName(audit) !== "write" || audit.result !== undefined) return undefined;
+	const content = audit.args?.content;
+	if (typeof content !== "string" || content === "") return undefined;
+	const path = typeof audit.args?.path === "string" ? audit.args.path : undefined;
+	const head: Span[] = [span("preview", "muted"), span(" · " + countLabel(content.split("\n").length, "line"), "muted")];
+	if (content.length >= WRITE_PREVIEW_CHARS) {
+		head.push(span(" · first " + WRITE_PREVIEW_CHARS + " chars", "warning"));
+	}
+	return {
+		k: "section",
+		key: `call:${index}:preview`,
+		p: { head, role: "omp-fabric.preview", collapsible: true, collapsed: options.expanded !== true },
+		c: [
+			{
+				k: "code",
+				key: `call:${index}:preview-code`,
+				p: {
+					text: content.replace(/\n+$/, ""),
+					...(path === undefined ? {} : { path }),
+				},
+			},
+		],
+	};
+}
+
 /** The fact a call's own rule puts on its line, for a result that has one. */
 function headFact(display: ToolDisplay, result: unknown): string | undefined {
 	const factOf = display.fact;
@@ -584,10 +888,12 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
 	const body = outputNode(audit, index, options, display.fold);
 	const spawn = spawnedAgent(audit);
+	// A write still running shows what it is about to write, from the arguments.
+	const preview = writePreview(audit, index, options);
 	const head = callHead(audit);
 	// A capped details was not "no output": it was output nobody can vouch for, and
-	// a spawn with no result yet is shown by its own row, not by that marker.
-	if (body === undefined && !cappedDetails(audit.result) && spawn === undefined) {
+	// a spawn or a running write is shown by its own block, not by that marker.
+	if (body === undefined && preview === undefined && !cappedDetails(audit.result) && spawn === undefined) {
 		const fact = headFact(display, audit.result);
 		head.push(span(" ", "muted"), span(fact ?? NO_OUTPUT, fact === undefined ? "warning strong" : "muted"));
 	}
@@ -616,8 +922,14 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 			],
 		});
 	}
+	if (preview !== undefined) nodes.push(preview);
 	// What the model asked the agent for: one row, whose own fold holds the brief.
 	if (spawn !== undefined) nodes.push(agentNode(spawn, index, options));
+	// An agents call that did not start a child still reports on one, or lists them.
+	const reported = reportedAgent(audit);
+	if (reported !== undefined) nodes.push(agentNode(reported, index, options));
+	const listed = agentListNode(audit, index);
+	if (listed !== undefined) nodes.push(listed);
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
 	if (audit.success === false && audit.error) {
@@ -800,6 +1112,43 @@ function readDetails(value: unknown): FabricDetails {
 	};
 }
 
+/** The program's own return text: `content` as a string, or its text parts joined. */
+function contentText(content: unknown): string | undefined {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return undefined;
+	const parts = content
+		.map(part => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
+		.filter(part => part !== "");
+	return parts.length === 0 ? undefined : parts.join("\n");
+}
+
+/** Lines up to the last non-blank one: how omp counts what a program returned. */
+function trimmedLineCount(value: string): number {
+	const lines = value.split("\n");
+	let end = lines.length;
+	while (end > 0 && (lines[end - 1] ?? "").trim() === "") end -= 1;
+	return end;
+}
+
+/**
+ * A nested read hands the program a whole file, but the program decides what the
+ * model sees: when it returns fewer lines than it read, the card says how many.
+ */
+function modelReadHint(content: string | undefined, audits: FabricAudit[]): string | undefined {
+	if (content === undefined) return undefined;
+	const modelLines = trimmedLineCount(content);
+	let readLines = 0;
+	let sawRead = false;
+	for (const audit of audits) {
+		if (coreToolName(audit) !== "read") continue;
+		const body = resultText(audit.result);
+		if (typeof body !== "string") continue;
+		sawRead = true;
+		readLines += trimmedLineCount(body);
+	}
+	return sawRead && modelLines < readLines ? `→ ${modelLines} of ${readLines} lines to model` : undefined;
+}
+
 /** The settled (or streaming) result: the program, its phases, every nested call, its return value. */
 export function describeFabricResult(
 	result: { content?: unknown; details?: unknown; isError?: boolean },
@@ -823,6 +1172,8 @@ export function describeFabricResult(
 	const body: NativeChild[] = [];
 	if (program !== "") body.push(programBlock(program, options));
 	body.push(...callBlocks(audits, phases, options));
+	const hint = modelReadHint(contentText(result?.content), audits);
+	if (hint !== undefined) body.push(text([span(hint, "warning")]));
 	if (details.error !== undefined) {
 		body.push(text([span(cut(firstLine(details.error) || details.error, 300), "error")]));
 	} else if (audits.length === 0 && details.progress !== undefined) {
