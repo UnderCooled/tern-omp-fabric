@@ -145,6 +145,14 @@ ported today composes from the subset omp carries — `list`/`item`, `kv`, `tabl
 The guide also fixes the head row: `row` with `justify: "between"` and `align: "center"`, which the
 four panels now do.
 
+Correction, same day: pi-wire's own kind list is longer than the subset named above — `rule`, `card`,
+`section`, `md`, `code`, `diff`, `ansi`, `json`, `meter`, `effort`, `picker`, `prefs` and more
+are all in `TSP_KINDS` (`vendor/omp-fabric/node_modules/@oh-my-pi/pi-wire/src/tsp.ts:38-81`), so
+settings' `rule` rows are legal. The real gap is the other way: the published protocol's `stats`,
+selectable `table`, `split`, `scroll`, `nav` and `pager` have no pi-wire kind at all. A scout
+inventory of the four panels (2026-11-05) found no kind outside `TSP_KINDS`, and no unsupported
+properties beyond `seg`'s `title` (a tooltip from `TspCommonProps`, not a segment label).
+
 - **7a dashboard.** `src/ui/dashboard.ts:107`, with `dashboard-detail.ts:97`,
   `dashboard-fabric-graph.ts:898`, `state-file-preview.ts:88`. The graph is the hard part: it is
   an ASCII canvas today.
