@@ -134,6 +134,17 @@ The graph question is answered: a JEV `noul` on "can existing kinds carry it" re
 (87% likelihood), so no protocol change is planned. Compose it from `tree`/`chart`/`col`+`row`;
 keep `ansi` only if the composed form loses information.
 
+### Protocol note, 2026-11-05
+
+The published protocol (docs.stencil.so/tern/protocol, stencil-hq/tern-sdk) is larger than what omp's
+pi-wire 18.14.2 emits: `stats`, a `selectable` `table` with `selected`, `split`, `scroll`, `nav` and
+`pager` are not in `TSP_KINDS` (`node_modules/@oh-my-pi/pi-wire/dist/types/tsp.d.ts:31)). So a panel
+ported today composes from the subset omp carries — `list`/`item`, `kv`, `table` (cols/rows only),
+`tree`, `tabs`, `seg`, `badge`, `kbd`, `progress`, `chart` — and the design guide's rules that need
+`stats` or a selectable table are the reason the panels read as lists until omp's pi-wire catches up.
+The guide also fixes the head row: `row` with `justify: "between"` and `align: "center"`, which the
+four panels now do.
+
 - **7a dashboard.** `src/ui/dashboard.ts:107`, with `dashboard-detail.ts:97`,
   `dashboard-fabric-graph.ts:898`, `state-file-preview.ts:88`. The graph is the hard part: it is
   an ASCII canvas today.
