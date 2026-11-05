@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { NativeChild, NativeNode } from "@oh-my-pi/pi-tui";
 import { grepTree, pathTree } from "../src/tree";
 
-type Span = { t: string; s?: string };
+type Span = { t: string; s?: string; href?: string };
 
 /** The body is described nodes only; a component child would mean the view is wrong. */
 function asNode(child: NativeChild): NativeNode {
@@ -56,6 +56,11 @@ describe("grepTree", () => {
 		expect(spans(contextRow!)[1]?.s).toBe("muted");
 	});
 
+	test("links each file group to the file it names", () => {
+		const nodes = treeOf(grepTree("src/a.ts:1: hit;\n", "k", path => `file:///${path}`));
+		expect(spans(nodes[0]!)[0]?.href).toBe("file:///src/a.ts");
+	});
+
 	test("returns undefined without any parsed row", () => {
 		expect(grepTree("hello world\n", "k")).toBeUndefined();
 	});
@@ -83,7 +88,22 @@ describe("pathTree", () => {
 		expect(textOf(nodes[1]!)).toBe("README.md");
 	});
 
-	test("returns undefined for flat paths", () => {
-		expect(pathTree("a.ts\nb.ts\n", "k")).toBeUndefined();
+	test("links file rows to the path they were found at", () => {
+		const nodes = treeOf(pathTree("src/a.ts\nsrc/lib/b.ts\nREADME.md", "k", path => `file:///${path}`));
+		// A directory is not a file: it gets no link, its files do.
+		expect(spans(nodes[0]!)[0]?.href).toBeUndefined();
+		expect(spans(nodes[0]!.children?.[0]!)[0]?.href).toBe("file:///src/a.ts");
+		expect(spans(nodes[0]!.children?.[1]!.children?.[0]!)[0]?.href).toBe("file:///src/lib/b.ts");
+		expect(spans(nodes[1]!)[0]?.href).toBe("file:///README.md");
+	});
+
+	test("links flat paths too", () => {
+		const nodes = treeOf(pathTree("a.ts\nb.ts\n", "k", path => `file:///${path}`));
+		expect(nodes.map(node => textOf(node))).toEqual(["a.ts", "b.ts"]);
+		expect(spans(nodes[0]!)[0]?.href).toBe("file:///a.ts");
+	});
+
+	test("returns undefined for empty output", () => {
+		expect(pathTree("\n", "k")).toBeUndefined();
 	});
 });

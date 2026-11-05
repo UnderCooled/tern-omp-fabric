@@ -629,6 +629,37 @@ describe("an edit answers with a diff", () => {
 		expect(path).toEqual({ t: "D:\\repos\\pkg\\src\\a.ts", s: "accent", href: "file:///D:/repos/pkg/src/a.ts" });
 	});
 
+	test("a read call's whole line opens the file it read", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						audits: [
+							{
+								ref: "omp.read",
+								tool: "read",
+								provider: "omp",
+								args: { path: "src/a.ts" },
+								result: "alpha\nbeta\n",
+								success: true,
+							},
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"read view",
+		);
+		const spans = textSpans(
+			unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line"),
+		);
+		const href = `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts`;
+		expect(spans[0]).toEqual({ t: "read", s: "strong", href });
+		expect(spans[2]).toEqual({ t: "src/a.ts", s: "accent", href });
+	});
+
 	test("a result fabric itself truncated says so instead of pasting JSON", () => {
 		const view = unwrap(
 			describeFabricResult(
@@ -740,6 +771,42 @@ describe("provider rows", () => {
 				success: true,
 			}),
 		).toBe("mesh.read builds · 12");
+	});
+
+	test("a mesh members call lists its members as rows", () => {
+		const view = unwrap(
+			describeFabricResult(
+				{
+					content: [],
+					details: {
+						success: true,
+						audits: [
+							{
+								ref: "mesh.members",
+								tool: "members",
+								provider: "mesh",
+								result: [
+									{ id: "session:1", label: "TOF-49", kind: "root", status: "running", model: "omp", stale: false },
+									{ id: "session:2", name: "main", kind: "agent", status: "completed", stale: true },
+								],
+								success: true,
+							},
+						],
+					},
+				},
+				options,
+				fabricCallArgs,
+			),
+			"mesh members view",
+		);
+		const list = unwrap(
+			nodes(view.body).find(node => props(node).role === "omp-fabric.mesh-members"),
+			"members list",
+		);
+		const items = nodes(list.c);
+		expect(items.map(item => props(item).label)).toEqual(["TOF-49", "main"]);
+		expect(props(items[0]!).detail).toBe("root · running · omp");
+		expect(props(items[1]!).detail).toBe("agent · completed · stale");
 	});
 
 	test("an mcp call names the server and the tool it called", () => {

@@ -6,7 +6,10 @@
 import type { NativeChild } from "@oh-my-pi/pi-tui";
 
 /** A styled run; structurally TspSpan, declared here so no pi-wire import is needed. */
-type Span = { t: string; s?: string };
+type Span = { t: string; s?: string; href?: string };
+
+/** Where a path row opens when it is clicked: a `file://` URL, or nothing. */
+type PathLink = (path: string) => string | undefined;
 
 /** A tree entry; structurally TspTreeNode. */
 type TreeNode = {
@@ -34,7 +37,7 @@ const escapeControlChars = (text: string): string =>
 		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "�");
 
 /** Grep output -> one tree node per consecutive run of rows from one file. */
-export function grepTree(text: string, key: string): NativeChild | undefined {
+export function grepTree(text: string, key: string, link?: PathLink): NativeChild | undefined {
 	const lines = text.split("\n");
 	const nodes: TreeNode[] = [];
 	let groupIndex = -1;
@@ -67,9 +70,14 @@ export function grepTree(text: string, key: string): NativeChild | undefined {
 			groupIndex++;
 			currentPath = path;
 			rowIndex = 0;
+			const href = link?.(path);
 			currentGroup = {
 				id: key + ":f" + groupIndex,
-				label: [{ t: escapeControlChars(path), s: "accent" }],
+				label: [
+					href === undefined
+						? { t: escapeControlChars(path), s: "accent" }
+						: { t: escapeControlChars(path), s: "accent", href },
+				],
 				open: true,
 				children: [],
 			};
@@ -94,9 +102,9 @@ export function grepTree(text: string, key: string): NativeChild | undefined {
 }
 
 /** Find/ls output -> a tree nested by path segments. */
-export function pathTree(text: string, key: string): NativeChild | undefined {
+export function pathTree(text: string, key: string, link?: PathLink): NativeChild | undefined {
 	const lines = text.split("\n").filter(line => line.length > 0);
-	if (!lines.some(line => line.includes("/"))) return undefined;
+	if (lines.length === 0) return undefined;
 
 	const shown = lines.slice(0, PATH_CAP);
 	const dropped = lines.length - shown.length;
@@ -120,9 +128,13 @@ export function pathTree(text: string, key: string): NativeChild | undefined {
 			const wantsDirectory = !leaf || directory;
 			let node = byPath.get(segment);
 			if (!node) {
+				const href = wantsDirectory ? undefined : link?.(segment);
 				node = wantsDirectory
 					? { id: key + ":" + segment, label: [{ t: escapeControlChars(part) + "/", s: "accent" }], open: true }
-					: { id: key + ":" + segment, label: escapeControlChars(part) };
+					: {
+							id: key + ":" + segment,
+							label: href === undefined ? escapeControlChars(part) : [{ t: escapeControlChars(part), href }],
+						};
 				byPath.set(segment, node);
 				siblings.push(node);
 			} else if (wantsDirectory && typeof node.label === "string") {

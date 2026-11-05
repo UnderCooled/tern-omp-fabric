@@ -285,6 +285,9 @@ const PROVIDER_DETAILS: Record<string, ProviderDetail> = {
 	},
 };
 
+/** The core tools whose argument is one file: their row's path is a link to it. */
+const PATH_TOOLS = new Set(["read", "write", "edit"]);
+
 /** The core tool a call names: `grep`, from `grep` or omp's namespaced `omp.grep`. */
 function coreToolName(audit: FabricAudit): string | undefined {
 	const provider = audit.provider?.toLowerCase();
@@ -480,9 +483,10 @@ function callHead(audit: FabricAudit): Span[] {
 	// A bash command and a spawned agent's brief are bodies of their own, not labels.
 	const detail = label === "bash" ? undefined : (spawnLabel(audit) ?? callDetail(audit));
 	if (detail !== undefined) {
-		// An edit whose change fabric capped has no diff to show: the file name is how
-		// the reader sees the change, so it opens the file instead.
-		const path = cappedDetails(audit.result) ? audit.args?.path : undefined;
+		// A call that names one file opens it: read/write/edit name a path, and an
+		// edit whose change fabric capped has no diff, so the file is how the reader
+		// sees the change. The whole line links, so a click anywhere opens it.
+		const path = PATH_TOOLS.has(label) ? audit.args?.path : undefined;
 		const href = typeof path === "string" ? fileHref(path) : undefined;
 		if (href !== undefined) head[0] = { ...head[0]!, href };
 		head.push(span(" "), href === undefined ? span(detail, "accent") : { t: detail, s: "accent", href });
@@ -566,8 +570,11 @@ function judgmentOutput(audit: FabricAudit, index: number, options: DescribeOpti
 /** A result whose lines are structured — a grep's file groups, a find's paths — drawn as a tree. */
 function treeOf(audit: FabricAudit, text: string, index: number): NativeChild | undefined {
 	const label = callLabel(audit).toLowerCase();
-	if (label === "grep") return grepTree(text, `output:${index}:grep`);
-	if (label === "find" || label === "ls") return pathTree(text, `output:${index}:paths`);
+	// A path in the output is a file the reader can open, so every row that names
+	// one carries the link Tern opens it with.
+	const link = (path: string) => fileHref(path);
+	if (label === "grep") return grepTree(text, `output:${index}:grep`, link);
+	if (label === "find" || label === "ls") return pathTree(text, `output:${index}:paths`, link);
 	return undefined;
 }
 
@@ -805,6 +812,45 @@ function agentListNode(audit: FabricAudit, index: number): NativeChild | undefin
 	};
 }
 
+/** The mesh calls that answer with a list of members. */
+const MESH_LIST_TOOLS = new Set(["members"]);
+
+/**
+ * The members a `mesh.members` call listed: one row each, named by the label omp
+ * gives the session (TOF-49) or by its own name. A member is a session on the mesh
+ * -- a root or an agent -- so its kind, run state and model are the facts that say
+ * what it is. The raw record is a lump of JSON nobody reads.
+ */
+function meshMembersNode(audit: FabricAudit, index: number): NativeChild | undefined {
+	if (audit.provider?.toLowerCase() !== "mesh" || !MESH_LIST_TOOLS.has(toolLeaf(audit))) return undefined;
+	if (!Array.isArray(audit.result)) return undefined;
+	const rows = audit.result.filter(isRecord);
+	if (rows.length === 0) return undefined;
+	return {
+		k: "list",
+		key: `call:${index}:mesh-members`,
+		p: { role: "omp-fabric.mesh-members" },
+		c: rows.map((row, at) => {
+			const detail = [
+				nonEmpty(row.kind),
+				nonEmpty(row.status),
+				nonEmpty(row.model),
+				row.stale === true ? "stale" : undefined,
+			]
+				.filter(Boolean)
+				.join(" · ");
+			return {
+				k: "item" as const,
+				key: `call:${index}:mesh-members:${at}`,
+				p: {
+					label: nonEmpty(row.label) ?? nonEmpty(row.name) ?? shortId(row.id) ?? "member",
+					...(detail === "" ? {} : { detail }),
+				},
+			};
+		}),
+	};
+}
+
 /**
  * The spawned agent: the row names it and says which runner and model it went
  * to, and the fold under it holds the whole brief as the model wrote it, drawn
@@ -930,6 +976,8 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	if (reported !== undefined) nodes.push(agentNode(reported, index, options));
 	const listed = agentListNode(audit, index);
 	if (listed !== undefined) nodes.push(listed);
+	const members = meshMembersNode(audit, index);
+	if (members !== undefined) nodes.push(members);
 	if (body !== undefined) nodes.push(body);
 	if (audit.resultTruncated === true) nodes.push(muted("truncated"));
 	if (audit.success === false && audit.error) {
