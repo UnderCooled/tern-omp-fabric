@@ -11,8 +11,24 @@
  *
  * Install: omp plugin link <repo>
  */
-import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { installFabricNative } from "./src/attach.js";
+
+/**
+ * The slice of omp's extension host this extension uses, typed from omp's own docs and observed in
+ * omp 18.14. Declared here rather than imported so the repo carries no dependency on
+ * `@oh-my-pi/pi-coding-agent`.
+ */
+interface ExtensionHost {
+	/** omp's host API, probed for `ExtensionRunner` by `installFabricNative`. */
+	pi: unknown;
+	logger: { debug(message: string): void };
+	on(event: "session_start", handler: (event: unknown, ctx: SessionStartContext) => void): void;
+}
+
+interface SessionStartContext {
+	hasUI: boolean;
+	ui: { notify(text: string, level: "warning" | "info" | "error"): void };
+}
 
 // omp's own test for expecting Tern (pi-tui terminal.ts `tspExpected`): a multiplexer started
 // from Tern keeps TERM_PROGRAM=tern but renders rows, so the multiplexers are excluded.
@@ -34,7 +50,7 @@ const IN_TERN =
 	].some(name => Bun.env[name]) &&
 	!/^(tmux|screen)/i.test(Bun.env.TERM ?? "");
 
-export default function ternOmpFabric(pi: ExtensionAPI): void {
+export default function ternOmpFabric(pi: ExtensionHost): void {
 	// Only the first failure warns, and only inside Tern: outside it the hooks are never read.
 	let warned = false;
 	const attempt = (warn: boolean, notify?: (text: string) => void): void => {
