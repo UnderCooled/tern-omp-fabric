@@ -103,6 +103,50 @@ describe("pathTree", () => {
 		expect(spans(nodes[0]!)[0]?.href).toBe("file:///a.ts");
 	});
 
+	test("nests find output under its directory headers", () => {
+		const text = ["# src/", "tree.ts", "describe.ts", "attach.ts"].join("\n");
+		const nodes = treeOf(pathTree(text, "k"));
+		expect(nodes).toHaveLength(1);
+		expect(textOf(nodes[0]!)).toBe("src/");
+		expect(nodes[0]!.children?.map(node => textOf(node))).toEqual(["tree.ts", "describe.ts", "attach.ts"]);
+	});
+
+	test("nests sibling find sections and root files", () => {
+		const text = ["index.ts", "# tests/", "tree.test.ts", "# src/", "tree.ts"].join("\n");
+		const nodes = treeOf(pathTree(text, "k"));
+		expect(nodes.map(node => textOf(node))).toEqual(["index.ts", "tests/", "src/"]);
+		expect(nodes[1]!.children?.map(node => textOf(node))).toEqual(["tree.test.ts"]);
+		expect(nodes[2]!.children?.map(node => textOf(node))).toEqual(["tree.ts"]);
+	});
+
+	test("nests deep find headers by hash depth", () => {
+		const text = [
+			"# node_modules/@oh-my-pi/pi-utils/",
+			"## dist/types/",
+			"yaml-config.d.ts",
+			"### dom/",
+			"#### codecs/",
+			"zstd.ts",
+		].join("\n");
+		const nodes = treeOf(pathTree(text, "k"));
+		const pi = nodes[0]!.children![0]!.children![0]!;
+		expect(textOf(pi)).toBe("pi-utils/");
+		const types = pi.children![0]!.children![0]!;
+		expect(textOf(types)).toBe("types/");
+		expect(types.children?.map(node => textOf(node))).toEqual(["yaml-config.d.ts", "dom/"]);
+		const codecs = types.children![1]!.children![0]!;
+		expect(textOf(codecs)).toBe("codecs/");
+		expect(codecs.children?.map(node => textOf(node))).toEqual(["zstd.ts"]);
+	});
+
+	test("keeps a truncation notice as a muted top-level node", () => {
+		const text = ["# src/", "tree.ts", '[[omp-fabric:truncated]] {"tool":"find"}'].join("\n");
+		const nodes = treeOf(pathTree(text, "k"));
+		expect(nodes).toHaveLength(2);
+		expect(textOf(nodes[1]!)).toBe('[[omp-fabric:truncated]] {"tool":"find"}');
+		expect(spans(nodes[1]!)[0]?.s).toBe("muted");
+	});
+
 	test("returns undefined for empty output", () => {
 		expect(pathTree("\n", "k")).toBeUndefined();
 	});

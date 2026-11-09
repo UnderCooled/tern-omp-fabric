@@ -27,6 +27,38 @@ const ROW_CAP = 200;
 /** Paths kept before the rest are dropped. */
 const PATH_CAP = 200;
 
+/** A find/ls directory header: `# root/`, `## sub/`, one hash per depth. */
+const HEADER_RE = /^(#+)\s+(.+)$/;
+
+/**
+ * Find output lists files under the directory headers that own them (`# root/`,
+ * `## sub/`, then names relative to the nearest header). Convert each line to a
+ * full path so the tree builder nests files inside their directories.
+ */
+function expandFindLines(lines: string[]): string[] {
+	const expanded: string[] = [];
+	const stack: string[] = []; // stack[i] = full path of the header with i+1 hashes
+	for (const line of lines) {
+		if (line.startsWith("[")) {
+			expanded.push(line);
+			continue;
+		}
+		const header = HEADER_RE.exec(line);
+		if (header) {
+			const depth = header[1]!.length;
+			const dir = header[2]!.endsWith("/") ? header[2]! : header[2]! + "/";
+			const full = depth === 1 ? dir : (stack[depth - 2] ?? "") + dir;
+			stack.length = depth - 1;
+			stack[depth - 1] = full;
+			expanded.push(full);
+			continue;
+		}
+		const parent = stack[stack.length - 1];
+		expanded.push(parent === undefined ? line : parent + line);
+	}
+	return expanded;
+}
+
 const muted = (text: string): readonly Span[] => [{ t: text, s: "muted" }];
 
 /** Control characters a terminal would act on, made inert. */
@@ -106,13 +138,14 @@ export function pathTree(text: string, key: string, link?: PathLink): NativeChil
 	const lines = text.split("\n").filter(line => line.length > 0);
 	if (lines.length === 0) return undefined;
 
-	const shown = lines.slice(0, PATH_CAP);
-	const dropped = lines.length - shown.length;
+	const expanded = expandFindLines(lines);
+	const shown = expanded.slice(0, PATH_CAP);
+	const dropped = expanded.length - shown.length;
 	const roots: TreeNode[] = [];
 	const byPath = new Map<string, TreeNode>();
 
 	for (const line of shown) {
-		if (line.startsWith("[") && line.endsWith("]")) {
+		if (line.startsWith("[")) {
 			roots.push({ id: key + ":n" + roots.length, label: muted(escapeControlChars(line)) });
 			continue;
 		}
