@@ -1006,8 +1006,8 @@ function statusFacts(
 	return [spans];
 }
 
-/** A click on the code copies it (Tern's own copy action). */
-const COPY_ACTION = { click: "copy", menu: ["copy"] } as const;
+/** A click on the code copies it (Tern's own copy action); a phone long-press offers the same. */
+const COPY_ACTION = { click: "copy", menu: ["copy"], hold: ["copy"] } as const;
 
 /**
  * The program in its own fold: the head counts its lines, opening it shows the

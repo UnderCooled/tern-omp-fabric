@@ -114,6 +114,7 @@ describe("describeFabricCall", () => {
 		expect(props(code).lang).toBe("typescript");
 		expect(props(code).preview).toBeUndefined();
 		expect(actionOf(code).click).toBe("copy");
+		expect(actionOf(code).hold).toEqual(["copy"]);
 	});
 
 	test("expanding the card starts the program open", () => {

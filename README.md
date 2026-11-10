@@ -19,7 +19,8 @@ hooks this plugin adds are read only by terminals that render natively.
 ## Requirements
 
 - omp 18.14 or later, running directly in a Tern pane (not inside tmux, zellij or another
-  multiplexer: those get omp's row renderer).
+  multiplexer: those get omp's row renderer). omp 18.18.6 or later for the program's long-press
+  Copy on a phone.
 - Tern 0.9 or later.
 - omp-fabric installed. Without it the extension loads and does nothing.
 
@@ -88,7 +89,8 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   twice. The outcome sits in the head rather than on a trailing line, which is also where omp's
   own card keeps it.
 - Copy rides on the code: a click on the program block's code puts the whole program on the
-  clipboard, and the same code's context menu offers Copy.
+  clipboard, the same code's context menu offers Copy, and a phone's long press lists it too
+  (`actions.hold`, which a host older than omp 18.18.6 ignores).
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, in a fold of its own.
