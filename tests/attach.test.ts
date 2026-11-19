@@ -9,9 +9,23 @@ function registered(name: string): { definition: Record<string, unknown> } {
 
 /** A stand-in ExtensionRunner; the host's real one is patched the same way. */
 class FakeRunner {
-	constructor(private readonly tools: { definition: Record<string, unknown> }[]) {}
+	readonly listeners: Array<(tool: { definition: Record<string, unknown> }, signal?: unknown) => unknown> = [];
+	constructor(readonly tools: { definition: Record<string, unknown> }[]) {}
 	getAllRegisteredTools(): { definition: Record<string, unknown> }[] {
 		return this.tools;
+	}
+	getRegisteredTool(name: string): { definition: Record<string, unknown> } | undefined {
+		return this.tools.find(tool => tool.definition.name === name);
+	}
+	onToolRegistered(
+		listener: (tool: { definition: Record<string, unknown> }, signal?: unknown) => unknown,
+	): () => void {
+		this.listeners.push(listener);
+		return () => undefined;
+	}
+	/** Fire a late registration the way the host's toolRegistrationListeners do. */
+	fire(tool: { definition: Record<string, unknown> }): void {
+		for (const listener of this.listeners) listener(tool);
 	}
 }
 
@@ -63,6 +77,24 @@ describe("installFabricNative", () => {
 
 		expect(installFabricNative(hostApi()).ok).toBe(true);
 		expect(FakeRunner.prototype.getAllRegisteredTools).toBe(patchedOnce);
+	});
+
+	test("attaches on late registration and on name lookup", () => {
+		const runner = new FakeRunner([registered("fabric_exec")]);
+		expect(installFabricNative(hostApi()).ok).toBe(true);
+		runner.onToolRegistered(() => undefined);
+
+		// A reload registers a fresh definition object under the same name.
+		const reloaded = registered("fabric_exec");
+		runner.tools.push(reloaded);
+		runner.fire(reloaded);
+		expect(typeof reloaded.definition.describeCall).toBe("function");
+
+		// The name lookup attaches a definition the listing never returned.
+		const fresh = registered("fabric_exec");
+		const looked = new FakeRunner([fresh]).getRegisteredTool("fabric_exec");
+		expect(looked).toBe(fresh);
+		expect(typeof looked?.definition.describeCall).toBe("function");
 	});
 
 	test("declines a frozen definition instead of throwing", () => {
