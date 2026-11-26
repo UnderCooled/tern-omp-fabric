@@ -1,48 +1,43 @@
 # tern-omp-fabric
 
 Native [Tern](https://docs.stencil.so/tern) rendering for [omp-fabric](https://github.com/tickernelz/omp-fabric)'s
-`fabric_exec` blocks, plus the Tern plugin that mirrors that rendering.
+`fabric_exec` blocks, with optional styling and a command palette entry.
 
-Tern draws omp's transcript itself, block by block. A tool call is described to it by the tool
-that owns the call: `fabric_exec` only implements omp's ANSI renderers, so Tern fell back to its
-generic card — the arguments as one line cut at 160 characters, and the result pasted as raw
-terminal output. Both halves of the complaint that started this plugin:
-
-| Before | After |
-| --- | --- |
-| `{code:"const [a, b] = await Promise.all([…`, 160 characters, not expandable | the program as a highlighted block in its own foldable section, unfolded and refolded by its head, copied by a click on the code |
-| the whole result as one raw output dump | the call's walltime and timeout, one fold per nested call (its own arguments, output, timing, failures), the program's logs and returned value each in their own fold, and a foot line saying done or failed with the duration |
-
-omp's own terminal rendering is untouched: fabric keeps its `renderCall`/`renderResult`, and the
-hooks this plugin adds are read only by terminals that render natively.
+Tern draws omp's transcript as native nodes. This extension wraps Fabric's renderers to supply
+those nodes in Tern rather than leaving the body to the generic card or terminal rows.
+The wrapper survives Fabric's in-place tool refresh during activation, including for cards
+already mounted. Outside Tern, Fabric's latest original renderers stay in use.
 
 ## Requirements
 
-- omp 18.14 or later, running directly in a Tern pane (not inside tmux, zellij or another
-  multiplexer: those get omp's row renderer). omp 18.18.6 or later for the program's long-press
-  Copy on a phone.
+- omp 19.2.1 or later, running directly in a Tern pane (not inside tmux, zellij or another
+  multiplexer). The extension and host must share the host's `@oh-my-pi/pi-tui` runtime.
 - Tern 0.9 or later.
 - omp-fabric installed. Without it the extension loads and does nothing.
 
 ## Install
 
-Two halves, as in `tern-omp-vimnav`: the repository root is the omp extension, `tern/` is the
-Tern plugin.
+Link the omp extension and restart omp. It supplies the native body without a Tern plugin.
 
 ```sh
-omp plugin link .          # then restart omp
+omp plugin link .
+```
+
+Optionally link the Tern plugin for borders, hidden dividers, and the expand command in the palette.
+
+```sh
 tern plugin link ./tern
 ```
 
-`tern plugin list` should show `omp-fabric … ready`. Link instead of install while editing: both
-halves reload on save.
+`tern plugin list` should show `omp-fabric … ready`. Restart omp after changing the omp extension.
 
 ## What you get
 
 A `fabric_exec` step reads, top to bottom:
 
 ```text
-Fabric  Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
+fabric_exec  {code: …}                       ← host header
+│ Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
 │ (the model's description, when it sent one)
 │ ▸ program · 42 lines                       ← its own fold: open it to read the code
 │ [discover] [report]                        ← the phases
@@ -65,15 +60,16 @@ call attribution — is not drawn.
 A call's arguments stay out of the body: the head already names the call (`grep /foo/ in src · 24ms`),
 so the space under it belongs to what came back.
 
-The head carries the outcome (`✓ Done · 2.4s`, `✗ Failed`, `✗ Cancelled`, or the `timeout 30s` it runs
-under) beside the counted facts, so the body has no trailing status line.
+The first body row carries the run name, counts and outcome (or the timeout while running).
+omp owns the outer header and displays cancellation there; the renderer does not receive a
+cancellation flag. The body has no trailing status line.
 
 Every block is a fold of its own: the program, and the output of every call that returned one. A
 fold is one row until you open it — `program · 42 lines`, `grep output · 12 lines` — except the output of a
 call that took two seconds or more, which starts open: the wait is the reason to look. `ctrl+o`
 (`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
 block its own disclosure: the terminal's "N more lines" button always opens the enclosing one, so
-a block that shows a preview cannot also unfold by itself. The Tern plugin adds a palette row for
+a block that shows a preview cannot also unfold by itself. The optional Tern plugin adds a palette row for
 the open-all — **omp fabric: expand tool output** — so it is reachable without knowing the chord.
 
 The ring around the program is this plugin's Tern sheet, not the node tree: the protocol gives
@@ -83,14 +79,10 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 
 ### Where this parts from omp's TUI
 
-- The head carries the verb, the counted facts and the outcome — `Sweep TODOs · TypeScript · 42
-  lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s` — and no target line and no Copy command:
-  the program itself is the body, so repeating its first line up there would say the same thing
-  twice. The outcome sits in the head rather than on a trailing line, which is also where omp's
-  own card keeps it.
-- Copy rides on the code: a click on the program block's code puts the whole program on the
-  clipboard, the same code's context menu offers Copy, and a phone's long press lists it too
-  (`actions.hold`, which a host older than omp 18.18.6 ignores).
+- The host keeps its tool label and 160-character argument summary. Fabric's richer summary is
+  the first body row; the extension does not replace the host header or compact presenter.
+- Copy rides on the code: click, context menu, or phone long press. Long programs show a native
+  overview when the program section is open.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
   card drops the code the moment the result replaces the call frame, leaving the command nowhere
   to be read; here it is the first thing under the head, in a fold of its own.
@@ -102,7 +94,8 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   `(no output)` instead, where the eye already is. Two calls never share a body, and the output is
   what the sheet rings.
 - An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed
-  into hunks (a gap in the numbering starts a new one), so the `-`/`+` lines get the terminal's own diff
+  into hunks (a gap in the numbering starts a new one). Tern chooses split or unified mode by width;
+  the `-`/`+` lines get its native diff
   rendering instead of a monospaced paste of the post-edit excerpt. When fabric caps the details
   object itself, only a prefix of the diff survives, and a prefix reads as the whole change: that call
   gets no output block and no marker, and its call line becomes a `file://` link — label and path both —
@@ -114,7 +107,7 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   fence always gets: the `bash` label with its Copy button, the highlighter, the code background,
   and a ring from `tern/style.css`. It wraps instead of scrolling sideways and sits two cells in
   from the call line, under the label rather than out past it. The line keeps the tool and the
-  duration; the output fold follows as for any other call.
+  duration; the output fold follows as for any other call. Hover over a bash call or a text output fold for a bounded preview.
 - A provider call is named by its ref, not its bare tool name, and carries the fact its provider joins:
   `mesh.read builds · 12`, `mcp.$call github.search`, `fabric.discovery.list omp · tools · 3`,
   `fabric.workflow.parallel 3 items · 2 stages`, `agents.list · 7`. The table lives in
@@ -171,7 +164,7 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
   output" in this card. `ctrl+o` and the transcript's own text still carry it in an ordinary omp
   session; ask if you want it back as a trailing fold.
 - The timeout is the invocation's own `timeoutMs`. Without one, the configured executor deadline is
-  not visible to an extension and the head says nothing about it while the call runs.
+  not visible to an extension and the summary omits it while the call runs.
 - No block inside a `fabric_exec` card can carry its own frame from the node tree: the protocol
   draws one ring per tool call and flattens nested frames by design. The borders in `style.css`
   are a Tern sheet, so they exist only in Tern, only while this plugin is loaded, and a user CSS
@@ -180,9 +173,10 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 ## Layout
 
 ```text
-index.ts          omp extension entry; installs the describe hooks
-src/attach.ts     attaches describeCall/describeResult to fabric's fabric_exec definition
-src/describe.ts   pure: fabric_exec args/details -> Tern nodes (no host imports at run time)
+index.ts          omp extension entry; installs the renderers only in Tern
+src/attach.ts     wraps Fabric’s renderCall/renderResult before omp adapts the definition
+src/describe.ts   builds native UiNode bodies from fabric_exec args and audits
+src/node.ts       constructs pi-tui nodes with wire props
 tests/            bun test over src/describe.ts and the attach seam
 tern/plugin.toml  Tern plugin manifest (id omp-fabric); styles = ["style.css"]
 tern/style.css    the rings, wells and dividers, by node role
@@ -195,6 +189,7 @@ tern/window.luau  the palette row that sends ctrl+o into the focused omp pane
 bun install
 bun test          # the view builder's behavior
 bun run typecheck # tsc --noEmit against the host packages' types
+omp -p hi -e ./index.ts --no-session --max-time 5
 ```
 
 ## Uninstall

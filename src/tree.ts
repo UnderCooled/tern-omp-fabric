@@ -1,9 +1,10 @@
 /**
  * Grep and path output -> Tern TSP trees.
  *
- * Pure by design: no I/O, no run-time imports beyond the erased type import.
+ * Pure by design: parses audit text without I/O.
  */
-import type { NativeChild } from "@oh-my-pi/pi-tui";
+import type { UiNode } from "@oh-my-pi/pi-tui";
+import { node } from "./node.js";
 
 /** A styled run; structurally TspSpan, declared here so no pi-wire import is needed. */
 type Span = { t: string; s?: string; href?: string };
@@ -69,7 +70,7 @@ const escapeControlChars = (text: string): string =>
 		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "�");
 
 /** Grep output -> one tree node per consecutive run of rows from one file. */
-export function grepTree(text: string, key: string, link?: PathLink): NativeChild | undefined {
+export function grepTree(text: string, key: string, link?: PathLink): UiNode | undefined {
 	const lines = text.split("\n");
 	const nodes: TreeNode[] = [];
 	let groupIndex = -1;
@@ -130,12 +131,12 @@ export function grepTree(text: string, key: string, link?: PathLink): NativeChil
 	if (dropped > 0) {
 		nodes.push({ id: key + ":more", label: muted("… " + dropped + " more matches") });
 	}
-	return { k: "tree", key, p: { nodes, role: "omp-fabric.grep" } };
+	return node("tree", { propKey: key, nodes, role: "omp-fabric.grep" });
 }
 
 /** Find/ls output -> a tree nested by path segments. */
-export function pathTree(text: string, key: string, link?: PathLink): NativeChild | undefined {
-	const lines = text.split("\n").filter(line => line.length > 0);
+export function pathTree(text: string, key: string, link?: PathLink): UiNode | undefined {
+	const lines = text.split("\n").filter((line) => line.length > 0);
 	if (lines.length === 0) return undefined;
 
 	const expanded = expandFindLines(lines);
@@ -185,5 +186,5 @@ export function pathTree(text: string, key: string, link?: PathLink): NativeChil
 	if (dropped > 0) {
 		roots.push({ id: key + ":more", label: muted("… " + dropped + " more paths") });
 	}
-	return { k: "tree", key, p: { nodes: roots, role: "omp-fabric.paths" } };
+	return node("tree", { propKey: key, nodes: roots, role: "omp-fabric.paths" });
 }

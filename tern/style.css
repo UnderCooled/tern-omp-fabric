@@ -19,6 +19,10 @@
 	margin: 6px 0;
 }
 
+[data-role="omp-fabric.summary"] {
+	margin: 4px 0;
+}
+
 /* A call's line: indented a little, with air before its output. */
 [data-role="omp-fabric.call"] {
 	padding-left: 6px;
@@ -46,7 +50,7 @@
 	overflow-x: hidden;
 }
 
-/* No hairlines: the head facts, the rings and the call lines separate the parts.
+/* No hairlines: the summary, the rings and the call lines separate the parts.
    Tern puts .sf-tool-hr on the child element itself, so nodes carrying one of our
    own roles are left alone -- a border-top of 0 there would take a ring edge with it. */
 [data-role="omp.tool.fabric_exec"] .sf-tool-hr:not([data-role^="omp-fabric."]) {

@@ -1,21 +1,9 @@
-/**
- * tern-omp-fabric — omp side.
- *
- * Gives omp-fabric's `fabric_exec` blocks a native description in Tern: the program as an
- * expandable code block, one section per nested call, and the return value as highlighted
- * text, instead of the generic fallback card (a 160-character args summary and a raw dump).
- *
- * Nothing here changes omp's own TUI rendering: fabric keeps its `renderCall`/`renderResult`.
- * The describe hooks are read only by terminals that render natively (Tern), so attaching
- * them everywhere is inert elsewhere.
- *
- * Install: omp plugin link <repo>
- */
+/** Native Fabric tool bodies for omp running directly in Tern. */
 import { installFabricNative } from "./src/attach.js";
 
 /**
  * The slice of omp's extension host this extension uses, typed from omp's own docs and observed in
- * omp 18.14. Declared here rather than imported so the repo carries no dependency on
+ * omp 19.2.1. Declared here rather than imported so the repo carries no dependency on
  * `@oh-my-pi/pi-coding-agent`.
  */
 interface ExtensionHost {
@@ -32,7 +20,7 @@ interface SessionStartContext {
 
 // omp's own test for expecting Tern (pi-tui terminal.ts `tspExpected`): a multiplexer started
 // from Tern keeps TERM_PROGRAM=tern but renders rows, so the multiplexers are excluded.
-const IN_TERN =
+const inTern = (): boolean =>
 	Bun.env.TERM_PROGRAM?.toLowerCase() === "tern" &&
 	Bun.env.HERDR_ENV !== "1" &&
 	Bun.env.WMUX !== "1" &&
@@ -47,19 +35,20 @@ const IN_TERN =
 		"CMUX_SURFACE_ID",
 		"CMUX_REMOTE_TRANSPORT",
 		"WMUX_SURFACE_ID",
-	].some(name => Bun.env[name]) &&
+	].some((name) => Bun.env[name]) &&
 	!/^(tmux|screen)/i.test(Bun.env.TERM ?? "");
 
 export default function ternOmpFabric(pi: ExtensionHost): void {
-	// Only the first failure warns, and only inside Tern: outside it the hooks are never read.
+	if (!inTern()) return;
+	// Only the first installation failure warns.
 	let warned = false;
 	const attempt = (warn: boolean, notify?: (text: string) => void): void => {
-		const outcome = installFabricNative(pi.pi);
+		const outcome = installFabricNative(pi.pi, inTern);
 		if (outcome.ok) {
-			pi.logger.debug("tern-omp-fabric: fabric_exec describe hooks installed");
+			pi.logger.debug("tern-omp-fabric: fabric_exec native renderers installed");
 			return;
 		}
-		pi.logger.debug(`tern-omp-fabric: fabric_exec describe hooks not installed: ${outcome.reason}`);
+		pi.logger.debug(`tern-omp-fabric: fabric_exec native renderers not installed: ${outcome.reason}`);
 		if (!warn || warned || !notify) return;
 		warned = true;
 		notify(`tern-omp-fabric: fabric blocks stay generic here — ${outcome.reason}`);
@@ -69,6 +58,6 @@ export default function ternOmpFabric(pi: ExtensionHost): void {
 	// retry covers an omp that builds its extension runner later.
 	attempt(false);
 	pi.on("session_start", (_event, ctx) => {
-		attempt(IN_TERN && ctx.hasUI, text => ctx.ui.notify(text, "warning"));
+		attempt(ctx.hasUI, (text) => ctx.ui.notify(text, "warning"));
 	});
 }

@@ -1,16 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { NativeChild, NativeNode } from "@oh-my-pi/pi-tui";
+import type { UiNode } from "@oh-my-pi/pi-tui";
 import { grepTree, pathTree } from "../src/tree";
 
 type Span = { t: string; s?: string; href?: string };
-
-/** The body is described nodes only; a component child would mean the view is wrong. */
-function asNode(child: NativeChild): NativeNode {
-	if (!("k" in child)) throw new Error("expected a described node, found a component");
-	return child;
-}
-
-const props = (node: NativeNode): Record<string, unknown> => (node.p ?? {}) as Record<string, unknown>;
 
 type TreeNode = {
 	id: string;
@@ -19,15 +11,17 @@ type TreeNode = {
 	children?: TreeNode[];
 };
 
-const treeOf = (child: NativeChild | undefined): TreeNode[] => {
-	if (!child) throw new Error("expected a tree, got undefined");
-	const node = asNode(child);
-	expect(node.k).toBe("tree");
-	return props(node).nodes as TreeNode[];
+const treeOf = (node: UiNode | undefined): TreeNode[] => {
+	if (!node) throw new Error("expected a tree, got undefined");
+	expect(node.kind).toBe("tree");
+	return (node.props() as Record<string, unknown>).nodes as TreeNode[];
 };
 
 const spans = (node: TreeNode): Span[] => (Array.isArray(node.label) ? node.label : [{ t: node.label }]);
-const textOf = (node: TreeNode): string => spans(node).map(span => span.t).join("");
+const textOf = (node: TreeNode): string =>
+	spans(node)
+		.map((span) => span.t)
+		.join("");
 
 describe("grepTree", () => {
 	test("groups consecutive rows per file", () => {
@@ -40,7 +34,7 @@ describe("grepTree", () => {
 		].join("\n");
 		const nodes = treeOf(grepTree(text, "k"));
 		expect(nodes).toHaveLength(3);
-		expect(nodes.map(node => textOf(node))).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+		expect(nodes.map((node) => textOf(node))).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
 		expect(nodes[0]?.children).toHaveLength(2);
 		expect(nodes[1]?.children).toHaveLength(2);
 		expect(nodes[2]?.children).toHaveLength(1);
@@ -57,7 +51,7 @@ describe("grepTree", () => {
 	});
 
 	test("links each file group to the file it names", () => {
-		const nodes = treeOf(grepTree("src/a.ts:1: hit;\n", "k", path => `file:///${path}`));
+		const nodes = treeOf(grepTree("src/a.ts:1: hit;\n", "k", (path) => `file:///${path}`));
 		expect(spans(nodes[0]!)[0]?.href).toBe("file:///src/a.ts");
 	});
 
@@ -82,14 +76,14 @@ describe("pathTree", () => {
 		expect(textOf(src)).toBe("src/");
 		expect(src.open).toBe(true);
 		const srcChildren = src.children ?? [];
-		expect(srcChildren.map(node => textOf(node))).toEqual(["a.ts", "lib/"]);
+		expect(srcChildren.map((node) => textOf(node))).toEqual(["a.ts", "lib/"]);
 		const lib = srcChildren[1]!;
-		expect(lib.children?.map(node => textOf(node))).toEqual(["b.ts"]);
+		expect(lib.children?.map((node) => textOf(node))).toEqual(["b.ts"]);
 		expect(textOf(nodes[1]!)).toBe("README.md");
 	});
 
 	test("links file rows to the path they were found at", () => {
-		const nodes = treeOf(pathTree("src/a.ts\nsrc/lib/b.ts\nREADME.md", "k", path => `file:///${path}`));
+		const nodes = treeOf(pathTree("src/a.ts\nsrc/lib/b.ts\nREADME.md", "k", (path) => `file:///${path}`));
 		// A directory is not a file: it gets no link, its files do.
 		expect(spans(nodes[0]!)[0]?.href).toBeUndefined();
 		expect(spans(nodes[0]!.children?.[0]!)[0]?.href).toBe("file:///src/a.ts");
@@ -98,8 +92,8 @@ describe("pathTree", () => {
 	});
 
 	test("links flat paths too", () => {
-		const nodes = treeOf(pathTree("a.ts\nb.ts\n", "k", path => `file:///${path}`));
-		expect(nodes.map(node => textOf(node))).toEqual(["a.ts", "b.ts"]);
+		const nodes = treeOf(pathTree("a.ts\nb.ts\n", "k", (path) => `file:///${path}`));
+		expect(nodes.map((node) => textOf(node))).toEqual(["a.ts", "b.ts"]);
 		expect(spans(nodes[0]!)[0]?.href).toBe("file:///a.ts");
 	});
 
@@ -108,15 +102,15 @@ describe("pathTree", () => {
 		const nodes = treeOf(pathTree(text, "k"));
 		expect(nodes).toHaveLength(1);
 		expect(textOf(nodes[0]!)).toBe("src/");
-		expect(nodes[0]!.children?.map(node => textOf(node))).toEqual(["tree.ts", "describe.ts", "attach.ts"]);
+		expect(nodes[0]!.children?.map((node) => textOf(node))).toEqual(["tree.ts", "describe.ts", "attach.ts"]);
 	});
 
 	test("nests sibling find sections and root files", () => {
 		const text = ["index.ts", "# tests/", "tree.test.ts", "# src/", "tree.ts"].join("\n");
 		const nodes = treeOf(pathTree(text, "k"));
-		expect(nodes.map(node => textOf(node))).toEqual(["index.ts", "tests/", "src/"]);
-		expect(nodes[1]!.children?.map(node => textOf(node))).toEqual(["tree.test.ts"]);
-		expect(nodes[2]!.children?.map(node => textOf(node))).toEqual(["tree.ts"]);
+		expect(nodes.map((node) => textOf(node))).toEqual(["index.ts", "tests/", "src/"]);
+		expect(nodes[1]!.children?.map((node) => textOf(node))).toEqual(["tree.test.ts"]);
+		expect(nodes[2]!.children?.map((node) => textOf(node))).toEqual(["tree.ts"]);
 	});
 
 	test("nests deep find headers by hash depth", () => {
@@ -133,10 +127,10 @@ describe("pathTree", () => {
 		expect(textOf(pi)).toBe("pi-utils/");
 		const types = pi.children![0]!.children![0]!;
 		expect(textOf(types)).toBe("types/");
-		expect(types.children?.map(node => textOf(node))).toEqual(["yaml-config.d.ts", "dom/"]);
+		expect(types.children?.map((node) => textOf(node))).toEqual(["yaml-config.d.ts", "dom/"]);
 		const codecs = types.children![1]!.children![0]!;
 		expect(textOf(codecs)).toBe("codecs/");
-		expect(codecs.children?.map(node => textOf(node))).toEqual(["zstd.ts"]);
+		expect(codecs.children?.map((node) => textOf(node))).toEqual(["zstd.ts"]);
 	});
 
 	test("keeps a truncation notice as a muted top-level node", () => {

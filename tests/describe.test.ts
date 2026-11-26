@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { NativeChild, NativeNode } from "@oh-my-pi/pi-tui";
-import type { NativeToolHead, NativeToolView } from "@oh-my-pi/pi-tui/tools";
+import type { UiNode } from "@oh-my-pi/pi-tui";
 import {
 	codeLineCount,
 	describeFabricCall,
@@ -30,39 +29,24 @@ function unwrap<T>(value: T | undefined | null, what: string): T {
 	return value;
 }
 
-/** The body is described nodes only; a component child would mean the view is wrong. */
-function asNode(child: NativeChild): NativeNode {
-	if (!("k" in child)) throw new Error("expected a described node, found a component");
-	return child;
-}
-
-const nodes = (children: readonly NativeChild[] | undefined): NativeNode[] => [...(children ?? [])].map(asNode);
-const props = (node: NativeNode): Record<string, unknown> => (node.p ?? {}) as Record<string, unknown>;
+const props = (node: UiNode): Record<string, unknown> => node.props() as Record<string, unknown>;
 const spanList = (value: unknown): Span[] => (Array.isArray(value) ? (value as Span[]) : []);
-const textSpans = (node: NativeNode): Span[] => spanList(props(node).spans);
-const headSpans = (node: NativeNode): Span[] => spanList(props(node).head);
-const joined = (spans: Span[]): string => spans.map(span => span.t).join("");
-const kindList = (children: readonly NativeChild[] | undefined): string[] => nodes(children).map(node => node.k);
-const byKind = (children: readonly NativeChild[] | undefined, k: string): NativeNode | undefined =>
-	nodes(children).find(node => node.k === k);
-const byKey = (children: readonly NativeChild[] | undefined, key: string): NativeNode | undefined =>
-	nodes(children).find(node => node.key === key);
-const withRole = (children: readonly NativeChild[] | undefined, role: string): NativeNode[] =>
-	nodes(children).filter(node => props(node).role === role);
-const actionOf = (node: NativeNode): Record<string, unknown> =>
-	(typeof props(node).actions === "object" && props(node).actions !== null
-		? props(node).actions
-		: {}) as Record<string, unknown>;
+const textSpans = (node: UiNode): Span[] => spanList(props(node).spans);
+const headSpans = (node: UiNode): Span[] => spanList(props(node).head);
+const joined = (spans: Span[]): string => spans.map((span) => span.t).join("");
+const kindList = (children: readonly UiNode[]): string[] => children.map((node) => node.kind);
+const byKind = (children: readonly UiNode[], k: string): UiNode | undefined => children.find((node) => node.kind === k);
+const byKey = (children: readonly UiNode[], key: string): UiNode | undefined =>
+	children.find((node) => node.props().key === key);
+const withRole = (children: readonly UiNode[], role: string): UiNode[] =>
+	children.filter((node) => props(node).role === role);
+const actionOf = (node: UiNode): Record<string, unknown> =>
+	(typeof props(node).actions === "object" && props(node).actions !== null ? props(node).actions : {}) as Record<
+		string,
+		unknown
+	>;
 const auditsOf = (details: FabricDetails): FabricAudit[] => details.audits ?? [];
-const toolHead = (view: NativeToolView): NativeToolHead => unwrap(view.tool, "tool head");
-
-/** A head meta entry is a plain fact or a run of styled spans. */
-const factText = (entry: unknown): string => (typeof entry === "string" ? entry : joined(spanList(entry)));
-const facts = (view: NativeToolView): string[] => (unwrap(toolHead(view).meta, "head meta") as unknown[]).map(factText);
-const lastFact = (view: NativeToolView): Span[] => {
-	const meta = unwrap(toolHead(view).meta, "head meta") as unknown[];
-	return spanList(meta[meta.length - 1]);
-};
+const summary = (body: readonly UiNode[]): Span[] => textSpans(unwrap(byKey(body, "summary"), "Fabric summary"));
 
 const options: DescribeOptions = { elapsedMs: 1200 };
 
@@ -81,26 +65,22 @@ describe("programText / codeLineCount", () => {
 describe("describeFabricCall", () => {
 	const view = unwrap(describeFabricCall(fabricCallArgs, options), "call view");
 
-	test("head is the verb, the counts, and the deadline it runs under", () => {
-		const head = toolHead(view);
-		expect(head.title).toBe("Fabric");
-		expect(head.target).toBeUndefined();
-		expect(head.command).toBeUndefined();
-		expect(facts(view)).toEqual(["Sweep TODOs", "TypeScript · 12 lines", "timeout 30s"]);
-		expect(lastFact(view)).toEqual([{ t: "timeout 30s", s: "muted" }]);
+	test("the first body row names the run, line count and deadline", () => {
+		expect(view[0]?.props().role).toBe("omp-fabric.summary");
+		expect(joined(summary(view))).toBe("Sweep TODOs · TypeScript · 12 lines · timeout 30s");
 	});
 
-	test("the description is the first body child", () => {
-		const description = unwrap(nodes(view.body)[0], "description line");
-		expect(description.k).toBe("text");
+	test("the description follows the summary", () => {
+		const description = unwrap(view[1], "description line");
+		expect(description.kind).toBe("text");
 		const span = unwrap(textSpans(description)[0], "description span");
 		expect(span.s).toBe("muted");
 		expect(span.t).toBe("Greps src for TODO markers and reports files.");
 	});
 
 	test("the program is its own fold, counted in its head", () => {
-		const program = unwrap(byKey(view.body, "program"), "program fold");
-		expect(program.k).toBe("section");
+		const program = unwrap(byKey(view, "program"), "program fold");
+		expect(program.kind).toBe("section");
 		expect(props(program).role).toBe("omp-fabric.program");
 		expect(props(program).collapsible).toBe(true);
 		expect(props(program).collapsed).toBe(true);
@@ -108,8 +88,8 @@ describe("describeFabricCall", () => {
 	});
 
 	test("opening the program fold shows the whole program, and clicking the code copies it", () => {
-		const program = unwrap(byKey(view.body, "program"), "program fold");
-		const code = unwrap(byKind(program.c, "code"), "program code");
+		const program = unwrap(byKey(view, "program"), "program fold");
+		const code = unwrap(byKind(program.children(), "code"), "program code");
 		expect(props(code).text).toBe(programText(fabricCallArgs));
 		expect(props(code).lang).toBe("typescript");
 		expect(props(code).preview).toBeUndefined();
@@ -117,25 +97,31 @@ describe("describeFabricCall", () => {
 		expect(actionOf(code).hold).toEqual(["copy"]);
 	});
 
+	test("long programs show the code overview without changing what Copy sees", () => {
+		const source = Array.from({ length: 21 }, (_, i) => `// line ${i}`).join("\n");
+		const program = unwrap(byKey(describeFabricCall({ code: source }, { expanded: true }), "program"), "program fold");
+		const code = unwrap(byKind(program.children(), "code"), "program code");
+		expect(props(code)).toMatchObject({ overview: true, text: source });
+	});
+
 	test("expanding the card starts the program open", () => {
 		const expanded = unwrap(describeFabricCall(fabricCallArgs, { expanded: true }), "expanded call view");
-		expect(props(unwrap(byKey(expanded.body, "program"), "program fold")).collapsed).toBe(false);
+		expect(props(unwrap(byKey(expanded, "program"), "program fold")).collapsed).toBe(false);
 	});
 
 	test("nothing in the body is a card", () => {
-		for (const node of nodes(view.body)) expect(node.k).not.toBe("card");
+		for (const node of view) expect(node.kind).not.toBe("card");
 	});
 
 	test("incomplete args with no code show composing…", () => {
 		const composing = unwrap(describeFabricCall(undefined, { argsComplete: false }), "composing view");
-		expect(kindList(composing.body)).toEqual(["text"]);
-		expect(joined(textSpans(unwrap(nodes(composing.body)[0], "composing text")))).toBe("composing…");
+		expect(kindList(composing)).toEqual(["text"]);
+		expect(joined(textSpans(unwrap(composing[0], "composing text")))).toBe("composing…");
 	});
 
 	test("complete args with no code and no timeout render an empty body", () => {
 		const empty = unwrap(describeFabricCall(undefined, options), "empty call view");
-		expect(kindList(empty.body)).toEqual([]);
-		expect(empty.tool?.meta).toBeUndefined();
+		expect(kindList(empty)).toEqual([]);
 	});
 });
 
@@ -143,48 +129,38 @@ describe("describeFabricResult", () => {
 	const settled: DescribeOptions = { elapsedMs: 2400 };
 	const view = unwrap(describeFabricResult(fabricResult, settled, fabricCallArgs), "result view");
 
-	test("head: verb, line count, calls, failures, phases, then the outcome", () => {
-		expect(facts(view)).toEqual([
-			"Sweep TODOs",
-			"TypeScript · 12 lines",
-			"3 calls",
-			"1 failed",
-			"2 phases",
-			"✓ Done · 2.4s",
-		]);
-		expect(lastFact(view)).toEqual([
-			{ t: "✓ Done", s: "success" },
-			{ t: " · 2.4s", s: "muted" },
-		]);
+	test("the summary includes the call counts, failures, phases and outcome", () => {
+		expect(joined(summary(view))).toBe(
+			"Sweep TODOs · TypeScript · 12 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s",
+		);
+		expect(summary(view)).toContainEqual({ t: "✓ Done", s: "success" });
 	});
 
 	test("body: the program fold, the phase row, then each call with its output", () => {
 		// The read call has no fold: a file's own text is not output a person reads.
-		expect(kindList(view.body)).toEqual(["section", "row", "text", "section", "text", "text", "text"]);
-		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(3);
-		expect(withRole(view.body, "omp-fabric.output")).toHaveLength(1);
-		expect(props(unwrap(byKind(view.body, "row"), "phase row")).role).toBe("omp-fabric.phase");
+		expect(kindList(view)).toEqual(["text", "section", "row", "text", "section", "text", "text", "text"]);
+		expect(withRole(view, "omp-fabric.call")).toHaveLength(3);
+		expect(withRole(view, "omp-fabric.output")).toHaveLength(1);
+		expect(props(unwrap(byKind(view, "row"), "phase row")).role).toBe("omp-fabric.phase");
 	});
 
 	test("a call line names the call and its timing", () => {
-		const line = withRole(view.body, "omp-fabric.call")[0];
+		const line = withRole(view, "omp-fabric.call")[0];
 		const spans = textSpans(unwrap(line, "first call line"));
-		expect(spans.find(span => span.s === "strong")?.t).toBe("grep");
-		expect(joined(spans.filter(span => span.s === "accent"))).toContain("/foo/ in src");
-		expect(joined(spans.filter(span => span.s === "muted"))).toContain("24ms");
+		expect(spans.find((span) => span.s === "strong")?.t).toBe("grep");
+		expect(joined(spans.filter((span) => span.s === "accent"))).toContain("/foo/ in src");
+		expect(joined(spans.filter((span) => span.s === "muted"))).toContain("24ms");
 	});
 
 	test("every call that returned something has an output fold, folded", () => {
-		for (const output of withRole(view.body, "omp-fabric.output")) {
+		for (const output of withRole(view, "omp-fabric.output")) {
 			expect(props(output).collapsed).toBe(true);
 		}
 	});
 
 	test("a failing call still carries its message", () => {
 		const message = unwrap(
-			nodes(view.body).find(
-				node => props(node).role !== "omp-fabric.call" && textSpans(node).some(span => span.s === "error"),
-			),
+			view.find((node) => props(node).role === undefined && textSpans(node).some((span) => span.s === "error")),
 			"error text",
 		);
 		expect(joined(textSpans(message))).toContain("connection reset by peer");
@@ -195,7 +171,7 @@ describe("describeFabricResult", () => {
 			describeFabricResult({ ...fabricResult, isError: true }, settled, fabricCallArgs),
 			"failed result view",
 		);
-		expect(lastFact(failed)[0]).toEqual({ t: "✗ Failed", s: "error" });
+		expect(summary(failed)).toContainEqual({ t: "✗ Failed", s: "error" });
 	});
 
 	test("an unfinished call reports its timeout instead of an outcome", () => {
@@ -207,21 +183,13 @@ describe("describeFabricResult", () => {
 			),
 			"running result view",
 		);
-		expect(joined(lastFact(running))).toBe("timeout 30s");
-		expect(kindList(running.body)).toEqual(["section"]);
-	});
-
-	test("a cancelled call says so", () => {
-		const cancelled = unwrap(
-			describeFabricResult({ ...fabricResult }, { elapsedMs: 900, cancelled: true }, fabricCallArgs),
-			"cancelled result view",
-		);
-		expect(lastFact(cancelled)[0]).toEqual({ t: "✗ Cancelled", s: "warning" });
+		expect(joined(summary(running))).toEndWith("timeout 30s");
+		expect(kindList(running)).toEqual(["text", "section"]);
 	});
 });
 
 describe("when a call shows its output", () => {
-	function render(audit: FabricAudit, opts: DescribeOptions = options): NativeToolView {
+	function render(audit: FabricAudit, opts: DescribeOptions = options): UiNode[] {
 		return unwrap(
 			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, opts, fabricCallArgs),
 			"single-audit view",
@@ -229,16 +197,19 @@ describe("when a call shows its output", () => {
 	}
 
 	/** The last span of a call's own line: the fact it carries instead of a fold. */
-	function lineFact(view: NativeToolView): Span | undefined {
-		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+	function lineFact(view: UiNode[]): Span | undefined {
+		const line = unwrap(
+			view.find((node) => props(node).role === "omp-fabric.call"),
+			"call line",
+		);
 		const spans = textSpans(line);
 		return spans[spans.length - 1];
 	}
 
 	test("a slow call gets an output fold that starts open", () => {
 		const view = render(slowAudit);
-		const output = unwrap(byKey(view.body, "output:0"), "output fold");
-		expect(output.k).toBe("section");
+		const output = unwrap(byKey(view, "output:0"), "output fold");
+		expect(output.kind).toBe("section");
 		expect(props(output).role).toBe("omp-fabric.output");
 		expect(props(output).collapsible).toBe(true);
 		expect(props(output).collapsed).toBe(false);
@@ -248,19 +219,22 @@ describe("when a call shows its output", () => {
 
 	test("opening that fold shows the whole output", () => {
 		const view = render(slowAudit);
-		const ansi = unwrap(byKey(unwrap(byKey(view.body, "output:0"), "output fold").c, "output:0:text"), "output text");
-		expect(ansi.k).toBe("ansi");
+		const ansi = unwrap(
+			byKey(unwrap(byKey(view, "output:0"), "output fold").children(), "output:0:text"),
+			"output text",
+		);
+		expect(ansi.kind).toBe("ansi");
 		expect(String(props(ansi).text).split("\n")).toEqual(["line 1", "line 2", "line 3", "line 4", "line 5", "line 6"]);
 		expect(props(ansi).preview).toBeUndefined();
 	});
 
 	test("a fast call keeps its fold closed", () => {
-		const output = unwrap(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")).body, "output:0"), "output fold");
+		const output = unwrap(byKey(render(unwrap(auditsOf(fabricDetails)[0], "grep audit")), "output:0"), "output fold");
 		expect(props(output).collapsed).toBe(true);
 	});
 
 	test("a failure gets one even when fast", () => {
-		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }).body, "output:0")).toBeDefined();
+		expect(byKey(render({ ...slowAudit, success: false, endedAt: 10 }), "output:0")).toBeDefined();
 	});
 
 	test("a bash command is a shell code block of its own, and leaves the line", () => {
@@ -273,18 +247,26 @@ describe("when a call shows its output", () => {
 			startedAt: 0,
 			endedAt: 40,
 		});
-		const row = unwrap(byKey(view.body, "call:0:command"), "command row");
-		expect(row.k).toBe("row");
-		const indent = unwrap(nodes(row.c)[0], "indent cell");
+		const row = unwrap(byKey(view, "call:0:command"), "command row");
+		expect(row.kind).toBe("row");
+		const indent = unwrap(row.children()[0], "indent cell");
 		expect(joined(textSpans(indent))).toBe("  ");
-		const command = unwrap(nodes(row.c)[1], "command block");
-		expect(command.k).toBe("md");
+		const command = unwrap(row.children()[1], "command block");
+		expect(command.kind).toBe("md");
 		expect(props(command)).toMatchObject({
 			text: "```bash\nbun test 2>&1 | tail -4\n```",
 			role: "omp-fabric.command",
 		});
-		const line = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		const line = unwrap(
+			view.find((node) => props(node).role === "omp-fabric.call"),
+			"call line",
+		);
 		expect(joined(textSpans(line))).toBe("bash · 40ms");
+		expect(props(line).hovercard).toMatchObject({ k: "code", p: { text: "bun test 2>&1 | tail -4", lang: "bash" } });
+		expect(props(unwrap(byKey(view, "output:0"), "output fold")).hovercard).toMatchObject({
+			k: "ansi",
+			p: { text: "43 pass" },
+		});
 	});
 
 	test("a command holding a backtick fence gets a longer one around it", () => {
@@ -297,10 +279,8 @@ describe("when a call shows its output", () => {
 			startedAt: 0,
 			endedAt: 10,
 		});
-		const row = unwrap(byKey(view.body, "call:0:command"), "command row");
-		expect(props(unwrap(nodes(row.c)[1], "command block")).text).toBe(
-			"````bash\necho '```js'\n````",
-		);
+		const row = unwrap(byKey(view, "call:0:command"), "command row");
+		expect(props(unwrap(row.children()[1], "command block")).text).toBe("````bash\necho '```js'\n````");
 	});
 
 	test("a read says how many lines it returned, with no fold", () => {
@@ -313,7 +293,7 @@ describe("when a call shows its output", () => {
 			startedAt: 0,
 			endedAt: 12,
 		});
-		expect(byKey(view.body, "output:0")).toBeUndefined();
+		expect(byKey(view, "output:0")).toBeUndefined();
 		expect(lineFact(view)).toEqual({ t: "3 lines", s: "muted" });
 	});
 
@@ -327,38 +307,44 @@ describe("when a call shows its output", () => {
 			startedAt: 0,
 			endedAt: 12,
 		});
-		expect(byKey(view.body, "output:0")).toBeUndefined();
+		expect(byKey(view, "output:0")).toBeUndefined();
 		expect(lineFact(view)).toEqual({ t: "128 bytes", s: "muted" });
 	});
 
 	test("a call that printed nothing says so on its line, with no fold", () => {
 		for (const result of ["(no output)", "   "]) {
 			const view = render({ ...slowAudit, result, endedAt: 9000 });
-			expect(byKey(view.body, "output:0")).toBeUndefined();
+			expect(byKey(view, "output:0")).toBeUndefined();
 			expect(lineFact(view)).toEqual({ t: "(no output)", s: "warning strong" });
 		}
 	});
 
 	test("expanding the card opens every fold", () => {
 		const view = render({ ...slowAudit, endedAt: 10 }, { expanded: true });
-		expect(props(unwrap(byKey(view.body, "program"), "program fold")).collapsed).toBe(false);
-		expect(props(unwrap(byKey(view.body, "output:0"), "output fold")).collapsed).toBe(false);
+		expect(props(unwrap(byKey(view, "program"), "program fold")).collapsed).toBe(false);
+		expect(props(unwrap(byKey(view, "output:0"), "output fold")).collapsed).toBe(false);
 	});
 });
 
-
 describe("a spawn shows the agent it started", () => {
-	function render(audit: FabricAudit, opts: DescribeOptions = options): NativeToolView {
+	function render(audit: FabricAudit, opts: DescribeOptions = options): UiNode[] {
 		return unwrap(
-			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, opts, fabricCallArgs),
+			describeFabricResult(
+				{ content: [], details: { success: true, phases: [], audits: [audit] } },
+				opts,
+				fabricCallArgs,
+			),
 			"spawn view",
 		);
 	}
-	function callLine(view: NativeToolView): NativeNode {
-		return unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+	function callLine(view: UiNode[]): UiNode {
+		return unwrap(
+			view.find((node) => props(node).role === "omp-fabric.call"),
+			"call line",
+		);
 	}
-	function agentRows(view: NativeToolView): NativeNode[] {
-		return nodes(view.body).filter(node => node.k === "agent");
+	function agentRows(view: UiNode[]): UiNode[] {
+		return view.filter((node) => node.kind === "agent");
 	}
 
 	test("the line names the agent instead of cutting the task to 72 characters", () => {
@@ -366,20 +352,21 @@ describe("a spawn shows the agent it started", () => {
 	});
 
 	test("the spawn gets a row naming the runner and model, with the whole brief under it", () => {
-		const rows = agentRows(render(spawnAudit));
+		const rows = agentRows(render({ ...spawnAudit, result: { ...(spawnAudit.result as object), thinking: "xhigh" } }));
 		expect(rows.length).toBe(1);
 		const row = unwrap(rows[0], "agent row");
 		expect(props(row)).toMatchObject({
 			name: "ExploreRepos",
 			agent: "omp",
 			model: "anthropic/claude-sonnet-4-5",
+			thinking: "thinkingXhigh",
 			status: "pending",
 			collapsible: true,
 			collapsed: true,
 			role: "omp-fabric.agent",
 		});
-		const brief = unwrap(nodes(row.c)[0], "brief");
-		expect(brief.k).toBe("md");
+		const brief = unwrap(row.children()[0], "brief");
+		expect(brief.kind).toBe("md");
 		expect(props(brief).text).toBe(
 			"Complete assignment thoroughly: find every caller of describeFabricResult.\n\nThen report the files.",
 		);
@@ -391,7 +378,11 @@ describe("a spawn shows the agent it started", () => {
 	});
 
 	test("a handle that failed says so on the row", () => {
-		const view = render({ ...spawnAudit, result: { ...(spawnAudit.result as object), status: "failed" }, success: false });
+		const view = render({
+			...spawnAudit,
+			result: { ...(spawnAudit.result as object), status: "failed" },
+			success: false,
+		});
 		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("failed");
 	});
 
@@ -427,11 +418,15 @@ describe("a spawn shows the agent it started", () => {
 describe("how a call's output is drawn", () => {
 	function outputText(audit: FabricAudit): unknown {
 		const view = unwrap(
-			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [audit] } }, { expanded: true }, fabricCallArgs),
+			describeFabricResult(
+				{ content: [], details: { ...fabricDetails, audits: [audit] } },
+				{ expanded: true },
+				fabricCallArgs,
+			),
 			"single-audit view",
 		);
-		const fold = unwrap(byKey(view.body, "output:0"), "output fold");
-		return props(unwrap(byKind(fold.c, "ansi"), "output text")).text;
+		const fold = unwrap(byKey(view, "output:0"), "output fold");
+		return props(unwrap(byKind(fold.children(), "ansi"), "output text")).text;
 	}
 
 	test("text is drawn as a terminal, not as highlighted JSON", () => {
@@ -458,18 +453,16 @@ describe("how a call's output is drawn", () => {
 			),
 			"grep view",
 		);
-		const fold = unwrap(byKey(view.body, "output:0"), "output fold");
-		const tree = unwrap(byKind(fold.c, "tree"), "grep tree");
+		const fold = unwrap(byKey(view, "output:0"), "output fold");
+		const tree = unwrap(byKind(fold.children(), "tree"), "grep tree");
 		expect(props(tree).role).toBe("omp-fabric.grep");
 		const files = props(tree).nodes as { label: unknown; children?: unknown[] }[];
-		expect(files.map(file => joined(spanList(file.label)))).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
-		expect(files.map(file => file.children?.length)).toEqual([1, 1, 1]);
+		expect(files.map((file) => joined(spanList(file.label)))).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+		expect(files.map((file) => file.children?.length)).toEqual([1, 1, 1]);
 	});
 
 	test("a structured result is terminal text too, never the JSON viewer", () => {
-		const text = String(
-			outputText({ ...slowAudit, result: { lines: 40, truncated: false } }),
-		);
+		const text = String(outputText({ ...slowAudit, result: { lines: 40, truncated: false } }));
 		expect(text).toContain('"lines": 40');
 	});
 
@@ -488,19 +481,19 @@ describe("how a call's output is drawn", () => {
 });
 
 describe("an edit answers with a diff", () => {
-	function editOutput(opts: DescribeOptions = options): NativeNode {
+	function editOutput(opts: DescribeOptions = options): UiNode {
 		const view = unwrap(
 			describeFabricResult({ content: [], details: { ...fabricDetails, audits: [editAudit] } }, opts, fabricCallArgs),
 			"edit view",
 		);
-		return unwrap(byKey(view.body, "output:0"), "output fold");
+		return unwrap(byKey(view, "output:0"), "output fold");
 	}
 
 	test("the diff is handed to Tern's diff kind, not printed as text", () => {
 		const fold = editOutput();
-		expect(byKind(fold.c, "ansi")).toBeUndefined();
-		const diff = unwrap(byKind(fold.c, "diff"), "diff node");
-		expect(props(diff).mode).toBe("unified");
+		expect(byKind(fold.children(), "ansi")).toBeUndefined();
+		const diff = unwrap(byKind(fold.children(), "diff"), "diff node");
+		expect(props(diff).mode).toBe("auto");
 		expect(props(diff).path).toBe("src/a.ts");
 		const hunks = props(diff).hunks as { oldStart: number; newStart: number; lines: string[] }[];
 		expect(hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
@@ -529,9 +522,9 @@ describe("an edit answers with a diff", () => {
 			),
 			"two-hunk view",
 		);
-		const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff node");
+		const diff = unwrap(byKind(unwrap(byKey(view, "output:0"), "output fold").children(), "diff"), "diff node");
 		const hunks = props(diff).hunks as { oldStart: number; newStart: number; lines: string[] }[];
-		expect(hunks.map(hunk => hunk.oldStart)).toEqual([1, 9]);
+		expect(hunks.map((hunk) => hunk.oldStart)).toEqual([1, 9]);
 		expect(hunks[1]?.lines).toEqual([" z", "-y", "+Y"]);
 	});
 
@@ -557,7 +550,7 @@ describe("an edit answers with a diff", () => {
 			),
 			"synthesised view",
 		);
-		const diff = unwrap(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff"), "diff node");
+		const diff = unwrap(byKind(unwrap(byKey(view, "output:0"), "output fold").children(), "diff"), "diff node");
 		expect(props(diff).hunks).toEqual([{ oldStart: 1, newStart: 1, lines: [" alpha", "-beta", "+BETA", " gamma"] }]);
 	});
 
@@ -589,12 +582,16 @@ describe("an edit answers with a diff", () => {
 			"capped-details view",
 		);
 		// A prefix of a diff reads as the whole change: no block, and no marker either.
-		expect(kindList(view.body)).toEqual(["section", "text"]);
-		expect(byKey(view.body, "output:0")).toBeUndefined();
-		const spans = textSpans(unwrap(nodes(view.body)[1], "call line"));
+		expect(kindList(view)).toEqual(["text", "section", "text"]);
+		expect(byKey(view, "output:0")).toBeUndefined();
+		const spans = textSpans(unwrap(withRole(view, "omp-fabric.call")[0], "call line"));
 		// A relative path resolves against the directory omp runs in, so the whole line
 		// opens the file: label and path both carry the link.
-		expect(spans[0]).toEqual({ t: "edit", s: "strong", href: `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts` });
+		expect(spans[0]).toEqual({
+			t: "edit",
+			s: "strong",
+			href: `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts`,
+		});
 		expect(spans[2]).toEqual({
 			t: "src/a.ts",
 			s: "accent",
@@ -626,7 +623,7 @@ describe("an edit answers with a diff", () => {
 			),
 			"linked view",
 		);
-		const path = textSpans(unwrap(nodes(view.body)[1], "call line"))[2];
+		const path = textSpans(unwrap(withRole(view, "omp-fabric.call")[0], "call line"))[2];
 		expect(path).toEqual({ t: "D:\\repos\\pkg\\src\\a.ts", s: "accent", href: "file:///D:/repos/pkg/src/a.ts" });
 	});
 
@@ -654,7 +651,10 @@ describe("an edit answers with a diff", () => {
 			"read view",
 		);
 		const spans = textSpans(
-			unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line"),
+			unwrap(
+				view.find((node) => props(node).role === "omp-fabric.call"),
+				"call line",
+			),
 		);
 		const href = `file:///${process.cwd().replace(/\\/g, "/").replace(/^\/+/, "")}/src/a.ts`;
 		expect(spans[0]).toEqual({ t: "read", s: "strong", href });
@@ -674,9 +674,9 @@ describe("an edit answers with a diff", () => {
 			"truncated view",
 		);
 		// Nothing to fold: the note is what the call's block shows.
-		expect(byKey(view.body, "output:0")).toBeUndefined();
+		expect(byKey(view, "output:0")).toBeUndefined();
 		const note = unwrap(
-			nodes(view.body).find(node => joined(textSpans(node)).includes("truncated by fabric")),
+			view.find((node) => joined(textSpans(node)).includes("truncated by fabric")),
 			"truncation note",
 		);
 		expect(joined(textSpans(note))).toBe("result truncated by fabric (90000 chars)");
@@ -691,52 +691,61 @@ describe("an edit answers with a diff", () => {
 			),
 			"unchanged view",
 		);
-		expect(byKind(unwrap(byKey(view.body, "output:0"), "output fold").c, "diff")).toBeUndefined();
+		expect(byKind(unwrap(byKey(view, "output:0"), "output fold").children(), "diff")).toBeUndefined();
 	});
 });
 
 describe("caps", () => {
-	function render(opts: DescribeOptions): NativeToolView {
-		const audits: FabricAudit[] = Array.from({ length: 12 }, (_, index) => ({ ...fromTraceAudit, ref: "omp.grep." + index }));
+	function render(opts: DescribeOptions): UiNode[] {
+		const audits: FabricAudit[] = Array.from({ length: 12 }, (_, index) => ({
+			...fromTraceAudit,
+			ref: "omp.grep." + index,
+		}));
 		return unwrap(
-			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }], details: { audits } }, opts, fabricCallArgs),
+			describeFabricResult(
+				{ content: [{ type: "text", text: OUTPUT_TEXT }], details: { audits } },
+				opts,
+				fabricCallArgs,
+			),
 			"capped result view",
 		);
 	}
 
 	test("folded: 8 call lines plus a muted … 4 calls more", () => {
 		const view = render(options);
-		expect(withRole(view.body, "omp-fabric.call")).toHaveLength(8);
+		expect(withRole(view, "omp-fabric.call")).toHaveLength(8);
 		const more = unwrap(
-			nodes(view.body).find(node => joined(textSpans(node)).includes("more")),
+			view.find((node) => joined(textSpans(node)).includes("more")),
 			"the more line",
 		);
 		expect(joined(textSpans(more))).toBe("… 4 calls more");
 	});
 
 	test("expanded: all 12 call lines", () => {
-		expect(withRole(render({ expanded: true }).body, "omp-fabric.call")).toHaveLength(12);
+		expect(withRole(render({ expanded: true }), "omp-fabric.call")).toHaveLength(12);
 	});
 });
 
 describe("trace-only details", () => {
 	const view = unwrap(
-		describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }], details: traceOnlyDetails }, options, fabricCallArgs),
+		describeFabricResult(
+			{ content: [{ type: "text", text: OUTPUT_TEXT }], details: traceOnlyDetails },
+			options,
+			fabricCallArgs,
+		),
 		"trace-only view",
 	);
 
 	test("one line per trace operation, keyed to its ref", () => {
-		const lines = withRole(view.body, "omp-fabric.call");
+		const lines = withRole(view, "omp-fabric.call");
 		expect(lines).toHaveLength(2);
-		expect(lines[0]?.key).toBe("call:0:omp.grep");
-		expect(lines[1]?.key).toBe("call:1:omp.read");
+		expect(lines[0]?.props().key).toBe("call:0:omp.grep");
+		expect(lines[1]?.props().key).toBe("call:1:omp.read");
 	});
 
 	test("the failing operation carries its error", () => {
 		const message = unwrap(
-			nodes(view.body).find(
-				node => props(node).role !== "omp-fabric.call" && textSpans(node).some(span => span.s === "error"),
-			),
+			view.find((node) => props(node).role === undefined && textSpans(node).some((span) => span.s === "error")),
 			"trace error",
 		);
 		expect(joined(textSpans(message))).toContain("ENOENT");
@@ -747,17 +756,24 @@ describe("trace-only details", () => {
 			describeFabricResult({ content: [{ type: "text", text: OUTPUT_TEXT }] }, options, fabricCallArgs),
 			"no-details view",
 		);
-		expect(kindList(bare.body)).toEqual(["section"]);
+		expect(kindList(bare)).toEqual(["text", "section"]);
 	});
 });
 
 describe("provider rows", () => {
 	function line(audit: FabricAudit): string {
 		const view = unwrap(
-			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, options, fabricCallArgs),
+			describeFabricResult(
+				{ content: [], details: { success: true, phases: [], audits: [audit] } },
+				options,
+				fabricCallArgs,
+			),
 			"provider view",
 		);
-		const call = unwrap(nodes(view.body).find(node => props(node).role === "omp-fabric.call"), "call line");
+		const call = unwrap(
+			view.find((node) => props(node).role === "omp-fabric.call"),
+			"call line",
+		);
 		return joined(textSpans(call));
 	}
 
@@ -801,11 +817,11 @@ describe("provider rows", () => {
 			"mesh members view",
 		);
 		const list = unwrap(
-			nodes(view.body).find(node => props(node).role === "omp-fabric.mesh-members"),
+			view.find((node) => props(node).role === "omp-fabric.mesh-members"),
 			"members list",
 		);
-		const items = nodes(list.c);
-		expect(items.map(item => props(item).label)).toEqual(["TOF-49", "main"]);
+		const items = list.children();
+		expect(items.map((item) => props(item).label)).toEqual(["TOF-49", "main"]);
 		expect(props(items[0]!).detail).toBe("root · running · omp");
 		expect(props(items[1]!).detail).toBe("agent · completed · stale");
 	});
@@ -854,7 +870,14 @@ describe("provider rows", () => {
 					details: {
 						success: true,
 						audits: [
-							{ ref: "mesh.read", tool: "read", provider: "mesh", args: { topic: "builds" }, result: ["a", "b"], success: true },
+							{
+								ref: "mesh.read",
+								tool: "read",
+								provider: "mesh",
+								args: { topic: "builds" },
+								result: ["a", "b"],
+								success: true,
+							},
 						],
 					},
 				},
@@ -864,30 +887,32 @@ describe("provider rows", () => {
 			"mesh view",
 		);
 		// The core read rule would drop the fold and put a line count on the row.
-		expect(byKey(view.body, "output:0")).toBeDefined();
+		expect(byKey(view, "output:0")).toBeDefined();
 	});
 });
 
 describe("agents calls that are not spawns", () => {
-	function view(audit: FabricAudit): NativeToolView {
+	function view(audit: FabricAudit): UiNode[] {
 		return unwrap(
-			describeFabricResult({ content: [], details: { success: true, phases: [], audits: [audit] } }, options, fabricCallArgs),
+			describeFabricResult(
+				{ content: [], details: { success: true, phases: [], audits: [audit] } },
+				options,
+				fabricCallArgs,
+			),
 			"agents view",
 		);
 	}
 
 	test("status names the agent on a row", () => {
 		const row = unwrap(
-			nodes(
-				view({
-					ref: "agents.status",
-					tool: "status",
-					provider: "agents",
-					args: { id: "01a1589d" },
-					result: { id: "01a1589d", name: "ExploreRepos", status: "running", runner: "omp", model: "anthropic/x" },
-					success: true,
-				}).body,
-			).find(node => node.k === "agent"),
+			view({
+				ref: "agents.status",
+				tool: "status",
+				provider: "agents",
+				args: { id: "01a1589d" },
+				result: { id: "01a1589d", name: "ExploreRepos", status: "running", runner: "omp", model: "anthropic/x" },
+				success: true,
+			}).find((node) => node.kind === "agent"),
 			"agent row",
 		);
 		expect(props(row)).toMatchObject({ name: "ExploreRepos", agent: "omp", model: "anthropic/x", status: "pending" });
@@ -895,22 +920,20 @@ describe("agents calls that are not spawns", () => {
 
 	test("a list draws one item per agent, with its state", () => {
 		const list = unwrap(
-			nodes(
-				view({
-					ref: "agents.list",
-					tool: "list",
-					provider: "agents",
-					result: [
-						{ name: "one", status: "completed" },
-						{ name: "two", status: "failed" },
-					],
-					success: true,
-				}).body,
-			).find(node => node.k === "list"),
+			view({
+				ref: "agents.list",
+				tool: "list",
+				provider: "agents",
+				result: [
+					{ name: "one", status: "completed" },
+					{ name: "two", status: "failed" },
+				],
+				success: true,
+			}).find((node) => node.kind === "list"),
 			"agents list",
 		);
-		expect(nodes(list.c).map(item => props(item).label)).toEqual(["one", "two"]);
-		expect(nodes(list.c).map(item => props(item).detail)).toEqual(["done", "failed"]);
+		expect(list.children().map((item) => props(item).label)).toEqual(["one", "two"]);
+		expect(list.children().map((item) => props(item).detail)).toEqual(["done", "failed"]);
 	});
 });
 
@@ -938,12 +961,12 @@ describe("judgment answers", () => {
 		),
 		"judgment view",
 	);
-	const section = unwrap(byKey(view.body, "output:0:judgment"), "judgment section");
+	const section = unwrap(byKey(view, "output:0:judgment"), "judgment section");
 
 	test("the verdict is a badge, not a JSON dump", () => {
 		expect(props(section).role).toBe("omp-fabric.judgment");
-		expect(props(unwrap(byKind(section.c, "badge"), "verdict badge")).text).toBe("yes · 93%");
-		expect(byKind(section.c, "ansi")).toBeUndefined();
+		expect(props(unwrap(byKind(section.children(), "badge"), "verdict badge")).text).toBe("yes · 93%");
+		expect(byKind(section.children(), "ansi")).toBeUndefined();
 	});
 
 	test("the head names the backend and how many answers came back", () => {
@@ -951,19 +974,28 @@ describe("judgment answers", () => {
 	});
 
 	test("each answered question is one line", () => {
-		expect(joined(textSpans(unwrap(byKind(section.c, "text"), "answer line")))).toBe("• q: yes · 93%");
+		expect(joined(textSpans(unwrap(byKind(section.children(), "text"), "answer line")))).toBe("• q: yes · 93%");
 	});
 });
 
 describe("a write's preview", () => {
-	function view(args: Record<string, unknown>, result?: unknown): NativeToolView {
+	function view(args: Record<string, unknown>, result?: unknown): UiNode[] {
 		return unwrap(
 			describeFabricResult(
 				{
 					content: [],
 					details: {
 						success: true,
-						audits: [{ ref: "omp.write", tool: "write", provider: "omp", args, success: true, ...(result === undefined ? {} : { result }) }],
+						audits: [
+							{
+								ref: "omp.write",
+								tool: "write",
+								provider: "omp",
+								args,
+								success: true,
+								...(result === undefined ? {} : { result }),
+							},
+						],
 					},
 				},
 				options,
@@ -974,8 +1006,11 @@ describe("a write's preview", () => {
 	}
 
 	test("a running write shows the content it is about to write", () => {
-		const preview = unwrap(byKey(view({ path: "src/a.ts", content: "export const a = 1;\n" }).body, "call:0:preview"), "preview fold");
-		const code = unwrap(byKind(preview.c, "code"), "preview code");
+		const preview = unwrap(
+			byKey(view({ path: "src/a.ts", content: "export const a = 1;\n" }), "call:0:preview"),
+			"preview fold",
+		);
+		const code = unwrap(byKind(preview.children(), "code"), "preview code");
 		expect(props(code).text).toBe("export const a = 1;");
 		expect(props(code).path).toBe("src/a.ts");
 		expect(joined(headSpans(preview))).toBe("preview · 2 lines");
@@ -983,13 +1018,13 @@ describe("a write's preview", () => {
 
 	test("a capped preview says it is only a prefix", () => {
 		const content = "x".repeat(16_000);
-		const preview = unwrap(byKey(view({ path: "src/a.ts", content }).body, "call:0:preview"), "preview fold");
+		const preview = unwrap(byKey(view({ path: "src/a.ts", content }), "call:0:preview"), "preview fold");
 		expect(joined(headSpans(preview))).toContain("first 16000 chars");
 	});
 
 	test("a write that already returned says its bytes, with no preview", () => {
 		const done = view({ path: "src/a.ts", content: "x" }, "Successfully wrote 1 bytes to src/a.ts");
-		expect(byKey(done.body, "call:0:preview")).toBeUndefined();
+		expect(byKey(done, "call:0:preview")).toBeUndefined();
 	});
 });
 
@@ -1012,7 +1047,7 @@ describe("what reached the model", () => {
 			"hint view",
 		);
 		const hint = unwrap(
-			nodes(view.body).find(node => textSpans(node).some(span => span.t.startsWith("→"))),
+			view.find((node) => textSpans(node).some((span) => span.t.startsWith("→"))),
 			"read hint",
 		);
 		expect(joined(textSpans(hint))).toBe("→ 3 of 40 lines to model");
@@ -1035,7 +1070,6 @@ describe("what reached the model", () => {
 			),
 			"no-hint view",
 		);
-		expect(nodes(view.body).some(node => textSpans(node).some(span => span.t.startsWith("→")))).toBe(false);
+		expect(view.some((node) => textSpans(node).some((span) => span.t.startsWith("→")))).toBe(false);
 	});
 });
-

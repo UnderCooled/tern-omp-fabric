@@ -1,46 +1,82 @@
 /**
- * Wire `describeCall`/`describeResult` onto fabric's registered `fabric_exec` tool.
- *
- * Tern draws a tool call from the tool's own describe hooks first, then from the name-keyed
- * built-in renderer registry, then from the generic fallback card. `fabric_exec` is an
- * extension tool with ANSI renderers only, so Tern shows a truncated one-line args summary
- * and a raw output dump. The hooks must be on the definition before the host builds its
- * RegisteredToolAdapter: the adapter copies keys through getters taken at construction, so a
- * hook added later is invisible.
- *
- * Three host seams can hand a tool definition to the adapter builder, so all three are
- * wrapped: the listing (omp-fabric's own seam, capture/interceptor.ts), the late-registration
- * listener (deferred extensions and a reloaded extension host), and the name lookup the host
- * uses when it reactivates a tool. Each wrapper attaches the hooks to every definition named
- * fabric_exec and returns its value untouched; each wraps the current function so patches
- * compose whichever loads first.
+ * Install native renderers before omp constructs a RegisteredToolAdapter. The
+ * listing, registration listener and name lookup can all feed the adapter.
+ * Each patch wraps the current method so it composes with omp-fabric's patch.
  */
-import { describeFabricCall, describeFabricResult } from "./describe.js";
+import { describeFabricCall, describeFabricResult, type DescribeOptions, type FabricExecArgs } from "./describe.js";
 
-export const HOOKS_MARK: symbol = Symbol.for("tern-omp-fabric.describe.v1");
+export const HOOKS_MARK: symbol = Symbol.for("tern-omp-fabric.render.v1");
 export const PATCH_MARK: symbol = Symbol.for("tern-omp-fabric.registry.v1");
 export const REGISTRATION_MARK: symbol = Symbol.for("tern-omp-fabric.registration.v1");
 export const LOOKUP_MARK: symbol = Symbol.for("tern-omp-fabric.lookup.v1");
 
 const FABRIC_TOOL = "fabric_exec";
+type LegacyRenderOptions = Pick<
+	DescribeOptions,
+	"expanded" | "isPartial" | "argsComplete" | "executionStarted" | "elapsedMs"
+>;
+
+const toOptions = ({
+	expanded,
+	isPartial,
+	argsComplete,
+	executionStarted,
+	elapsedMs,
+}: LegacyRenderOptions): DescribeOptions => ({ expanded, isPartial, argsComplete, executionStarted, elapsedMs });
 
 type Definition = Record<string | symbol, unknown> & { name?: unknown };
 type RegisteredTool = { definition?: unknown };
 
 /** The live runner prototype, or undefined when the host does not expose it. */
 const runnerPrototype = (hostApi: unknown): Record<string, unknown> | undefined =>
-	(hostApi as { ExtensionRunner?: { prototype?: Record<string, unknown> } } | undefined)?.ExtensionRunner
-		?.prototype;
+	(hostApi as { ExtensionRunner?: { prototype?: Record<string, unknown> } } | undefined)?.ExtensionRunner?.prototype;
 
-/** Attach the hooks to one definition. False when it is not fabric_exec or already ours. */
-export function attachDescribeHooks(definition: unknown): boolean {
+/** Attach the renderers to one definition. False when it is not fabric_exec or already ours. */
+export function attachRenderers(definition: unknown, native: () => boolean): boolean {
 	if (typeof definition !== "object" || definition === null) return false;
 	const target = definition as Definition;
 	if (target.name !== FABRIC_TOOL || target[HOOKS_MARK] === true) return false;
+	let call = typeof target.renderCall === "function" ? target.renderCall : undefined;
+	let renderResult = typeof target.renderResult === "function" ? target.renderResult : undefined;
+
+	function nativeCall(this: unknown, args: FabricExecArgs | undefined, options: LegacyRenderOptions, theme: unknown) {
+		return native() ? describeFabricCall(args, toOptions(options)) : call?.call(this, args, options, theme);
+	}
+
+	function nativeResult(
+		this: unknown,
+		result: Parameters<typeof describeFabricResult>[0],
+		options: LegacyRenderOptions,
+		theme: unknown,
+		args?: FabricExecArgs,
+	) {
+		return native()
+			? describeFabricResult(result, toOptions(options), args)
+			: renderResult?.call(this, result, options, theme, args);
+	}
+
 	try {
-		target.describeCall = describeFabricCall;
-		target.describeResult = describeFabricResult;
-		target[HOOKS_MARK] = true;
+		// Fabric overwrites both methods in place before it re-registers the tool.
+		// Already-mounted adapters read them from this same definition.
+		Object.defineProperties(target, {
+			renderCall: {
+				configurable: true,
+				enumerable: true,
+				get: () => nativeCall,
+				set(value: unknown) {
+					if (value !== nativeCall) call = typeof value === "function" ? value : undefined;
+				},
+			},
+			renderResult: {
+				configurable: true,
+				enumerable: true,
+				get: () => nativeResult,
+				set(value: unknown) {
+					if (value !== nativeResult) renderResult = typeof value === "function" ? value : undefined;
+				},
+			},
+			[HOOKS_MARK]: { value: true },
+		});
 		return true;
 	} catch {
 		// A frozen definition keeps fabric's own renderers: Tern looks exactly as it did.
@@ -49,7 +85,7 @@ export function attachDescribeHooks(definition: unknown): boolean {
 }
 
 /** Wrap ExtensionRunner.prototype.getAllRegisteredTools. Idempotent per process. */
-export function patchToolListing(hostApi: unknown): { ok: boolean; reason?: string } {
+export function patchToolListing(hostApi: unknown, native: () => boolean): { ok: boolean; reason?: string } {
 	const proto = runnerPrototype(hostApi);
 	if (!proto || typeof proto.getAllRegisteredTools !== "function") {
 		return { ok: false, reason: "ExtensionRunner.getAllRegisteredTools is not reachable through pi.pi" };
@@ -60,7 +96,7 @@ export function patchToolListing(hostApi: unknown): { ok: boolean; reason?: stri
 		const tools = original.apply(this, args);
 		if (Array.isArray(tools)) {
 			for (const tool of tools) {
-				attachDescribeHooks((tool as { definition?: unknown } | undefined)?.definition);
+				attachRenderers((tool as { definition?: unknown } | undefined)?.definition, native);
 			}
 		}
 		return tools;
@@ -80,7 +116,7 @@ export function patchToolListing(hostApi: unknown): { ok: boolean; reason?: stri
  * tool object this listener receives, and that path never crosses the listing wrapper above.
  * Attaching here covers it; the wrapper keeps the current function so patches compose.
  */
-export function patchToolRegistration(hostApi: unknown): { ok: boolean; reason?: string } {
+export function patchToolRegistration(hostApi: unknown, native: () => boolean): { ok: boolean; reason?: string } {
 	const proto = runnerPrototype(hostApi);
 	if (!proto || typeof proto.onToolRegistered !== "function") {
 		return { ok: false, reason: "ExtensionRunner.onToolRegistered is not reachable through pi.pi" };
@@ -95,7 +131,7 @@ export function patchToolRegistration(hostApi: unknown): { ok: boolean; reason?:
 		listener: (tool: RegisteredTool, signal?: unknown) => unknown,
 	): unknown {
 		const wrapped = (tool: RegisteredTool, signal?: unknown): unknown => {
-			attachDescribeHooks(tool?.definition);
+			attachRenderers(tool?.definition, native);
 			return listener(tool, signal);
 		};
 		return original.call(this, wrapped);
@@ -110,7 +146,7 @@ export function patchToolRegistration(hostApi: unknown): { ok: boolean; reason?:
 }
 
 /** Wrap ExtensionRunner.prototype.getRegisteredTool. Idempotent per process. */
-export function patchToolLookup(hostApi: unknown): { ok: boolean; reason?: string } {
+export function patchToolLookup(hostApi: unknown, native: () => boolean): { ok: boolean; reason?: string } {
 	const proto = runnerPrototype(hostApi);
 	if (!proto || typeof proto.getRegisteredTool !== "function") {
 		return { ok: false, reason: "ExtensionRunner.getRegisteredTool is not reachable through pi.pi" };
@@ -119,7 +155,7 @@ export function patchToolLookup(hostApi: unknown): { ok: boolean; reason?: strin
 	const original = proto.getRegisteredTool as (this: unknown, ...args: unknown[]) => unknown;
 	const patched = function getFabricNativeVisibleTool(this: unknown, ...args: unknown[]): unknown {
 		const tool = original.apply(this, args) as RegisteredTool | undefined;
-		attachDescribeHooks(tool?.definition);
+		attachRenderers(tool?.definition, native);
 		return tool;
 	};
 	try {
@@ -131,12 +167,12 @@ export function patchToolLookup(hostApi: unknown): { ok: boolean; reason?: strin
 	return { ok: true };
 }
 
-export function installFabricNative(hostApi: unknown): { ok: boolean; reason?: string } {
-	const listing = patchToolListing(hostApi);
+export function installFabricNative(hostApi: unknown, native: () => boolean): { ok: boolean; reason?: string } {
+	const listing = patchToolListing(hostApi, native);
 	if (!listing.ok) return listing;
 	// The two late-registration seams are best-effort: an older host without them keeps the
 	// listing patch rather than losing the hooks entirely.
-	patchToolRegistration(hostApi);
-	patchToolLookup(hostApi);
+	patchToolRegistration(hostApi, native);
+	patchToolLookup(hostApi, native);
 	return { ok: true };
 }

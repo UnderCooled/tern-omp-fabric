@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "Renders omp-fabric's fabric_exec blocks natively in Tern: the program as an expandable code block, one section per nested call, the return value as highlighted text.",
+	"description": "Renders omp-fabric's fabric_exec blocks natively in Tern: the program as an expandable code block, one section per nested call, with its own output.",
 	"keywords": ["omp", "oh-my-pi", "omp-plugin", "omp-fabric", "tern"],
 	"files": ["index.ts", "src", "tern", "README.md"],
 	"omp": {
@@ -13,9 +13,11 @@
 		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
+	"dependencies": {
+		"@oh-my-pi/pi-tui": "^19.2.1"
+	},
 	"devDependencies": {
-		"@oh-my-pi/pi-tui": "18.18.6",
 		"@types/bun": "^1.3.14",
-		"typescript": "^6.0.3"
+		"typescript": "^7.0.2"
 	}
 }
