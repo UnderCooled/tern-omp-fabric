@@ -104,9 +104,9 @@ describe("describeFabricCall", () => {
 		expect(props(code)).toMatchObject({ overview: true, text: source });
 	});
 
-	test("expanding the card starts the program open", () => {
+	test("expanding the card keeps the program folded before a result", () => {
 		const expanded = unwrap(describeFabricCall(fabricCallArgs, { expanded: true }), "expanded call view");
-		expect(props(unwrap(byKey(expanded, "program"), "program fold")).collapsed).toBe(false);
+		expect(props(unwrap(byKey(expanded, "program"), "program fold")).collapsed).toBe(true);
 	});
 
 	test("nothing in the body is a card", () => {
@@ -206,13 +206,13 @@ describe("when a call shows its output", () => {
 		return spans[spans.length - 1];
 	}
 
-	test("a slow call gets an output fold that starts open", () => {
+	test("a slow call gets an output fold that starts closed", () => {
 		const view = render(slowAudit);
 		const output = unwrap(byKey(view, "output:0"), "output fold");
 		expect(output.kind).toBe("section");
 		expect(props(output).role).toBe("omp-fabric.output");
 		expect(props(output).collapsible).toBe(true);
-		expect(props(output).collapsed).toBe(false);
+		expect(props(output).collapsed).toBe(true);
 		// Named after its call: two output folds side by side must be tellable apart.
 		expect(joined(headSpans(output))).toBe("bash output · 6 lines");
 	});
@@ -319,10 +319,11 @@ describe("when a call shows its output", () => {
 		}
 	});
 
-	test("expanding the card opens every fold", () => {
-		const view = render({ ...slowAudit, endedAt: 10 }, { expanded: true });
-		expect(props(unwrap(byKey(view, "program"), "program fold")).collapsed).toBe(false);
-		expect(props(unwrap(byKey(view, "output:0"), "output fold")).collapsed).toBe(false);
+	test("expanding the card keeps the program and grep output folded", () => {
+		const grep = unwrap(auditsOf(fabricDetails)[0], "grep audit");
+		const view = render(grep, { expanded: true });
+		expect(props(unwrap(byKey(view, "program"), "program fold")).collapsed).toBe(true);
+		expect(props(unwrap(byKey(view, "output:0"), "output fold")).collapsed).toBe(true);
 	});
 });
 
@@ -398,9 +399,9 @@ describe("a spawn shows the agent it started", () => {
 		expect(props(unwrap(agentRows(view)[0], "agent row")).status).toBe("done");
 	});
 
-	test("expanding the card opens the brief", () => {
+	test("expanding the card keeps the agent brief folded", () => {
 		const rows = agentRows(render(spawnAudit, { expanded: true }));
-		expect(props(unwrap(rows[0], "agent row")).collapsed).toBe(false);
+		expect(props(unwrap(rows[0], "agent row")).collapsed).toBe(true);
 	});
 
 	test("another provider's spawn-shaped call is left to the generic line", () => {
@@ -956,12 +957,16 @@ describe("judgment answers", () => {
 					],
 				},
 			},
-			options,
+			{ ...options, expanded: true },
 			fabricCallArgs,
 		),
 		"judgment view",
 	);
 	const section = unwrap(byKey(view, "output:0:judgment"), "judgment section");
+
+	test("expanding the card keeps judgment answers folded", () => {
+		expect(props(section).collapsed).toBe(true);
+	});
 
 	test("the verdict is a badge, not a JSON dump", () => {
 		expect(props(section).role).toBe("omp-fabric.judgment");
@@ -998,7 +1003,7 @@ describe("a write's preview", () => {
 						],
 					},
 				},
-				options,
+				{ ...options, expanded: true },
 				fabricCallArgs,
 			),
 			"preview view",
@@ -1010,6 +1015,7 @@ describe("a write's preview", () => {
 			byKey(view({ path: "src/a.ts", content: "export const a = 1;\n" }), "call:0:preview"),
 			"preview fold",
 		);
+		expect(props(preview).collapsed).toBe(true);
 		const code = unwrap(byKind(preview.children(), "code"), "preview code");
 		expect(props(code).text).toBe("export const a = 1;");
 		expect(props(code).path).toBe("src/a.ts");

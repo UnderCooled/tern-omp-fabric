@@ -23,7 +23,8 @@ Link the omp extension and restart omp. It supplies the native body without a Te
 omp plugin link .
 ```
 
-Optionally link the Tern plugin for borders, hidden dividers, and the expand command in the palette.
+Optionally link the Tern plugin for borders, a header without the argument summary, and the
+expand command in the palette.
 
 ```sh
 tern plugin link ./tern
@@ -36,15 +37,15 @@ tern plugin link ./tern
 A `fabric_exec` step reads, top to bottom:
 
 ```text
-fabric_exec  {code: …}                       ← host header
+fabric_exec                                  ← host header with the Tern plugin linked
 │ Sweep TODOs · TypeScript · 42 lines · 3 calls · 1 failed · 2 phases · ✓ Done · 2.4s
 │ (the model's description, when it sent one)
 │ ▸ program · 42 lines                       ← its own fold: open it to read the code
 │ [discover] [report]                        ← the phases
 │ grep /foo/ in src · 24ms                   ← every call, its line…
-│ ▸ grep output · 12 lines                   ← …and its output: folded when it was quick
+│ ▸ grep output · 12 lines                   ← …and its independently folded output
 │ build · 5.2s
-│ ▾ bash output · 40 lines                   ← open when the call took 2 s or more
+│ ▸ bash output · 40 lines
 │ deploy · failed · 3.1s
 │ ▸ deploy output · 3 lines
 ```
@@ -64,13 +65,9 @@ The first body row carries the run name, counts and outcome (or the timeout whil
 omp owns the outer header and displays cancellation there; the renderer does not receive a
 cancellation flag. The body has no trailing status line.
 
-Every block is a fold of its own: the program, and the output of every call that returned one. A
-fold is one row until you open it — `program · 42 lines`, `grep output · 12 lines` — except the output of a
-call that took two seconds or more, which starts open: the wait is the reason to look. `ctrl+o`
-(`app.tools.expand`) opens all of them at once. That is the only arrangement that gives a
-block its own disclosure: the terminal's "N more lines" button always opens the enclosing one, so
-a block that shows a preview cannot also unfold by itself. The optional Tern plugin adds a palette row for
-the open-all — **omp fabric: expand tool output** — so it is reachable without knowing the chord.
+Open the outer card first, then click a fold such as `program · 42 lines` or `grep output · 12 lines`.
+Each fold starts closed and opens independently. `Ctrl+O` (`app.tools.expand`) and the optional Tern
+palette command **omp fabric: expand tool output** expand the outer card, not its folds.
 
 The ring around the program is this plugin's Tern sheet, not the node tree: the protocol gives
 each tool call exactly one frame and flattens anything framed inside its body
@@ -79,8 +76,8 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 
 ### Where this parts from omp's TUI
 
-- The host keeps its tool label and 160-character argument summary. Fabric's richer summary is
-  the first body row; the extension does not replace the host header or compact presenter.
+- omp still owns the header. The optional Tern stylesheet hides its argument summary for
+  `fabric_exec` only. The full code stays in the Program fold.
 - Copy rides on the code: click, context menu, or phone long press. Long programs show a native
   overview when the program section is open.
 - The program stays in the card once the result arrives. omp's transcript is append-only, so its
@@ -89,8 +86,7 @@ it per role and suppresses the tool's own hairlines — that is the half only Te
 - Each nested call is one line — what ran, its argument, how long — followed by the output fabric
   recorded for it (`audit.result`), in a fold named after that call. Every call that returned something
   gets one: the row costs a line, and a gap in the column reads as output that went missing. A call
-  that took two seconds or more opens its fold by itself, so a slow step shows what it produced
-  without a click. A call that printed nothing gets no fold at all — its line ends in a warning
+  that printed nothing gets no fold at all — its line ends in a warning
   `(no output)` instead, where the eye already is. Two calls never share a body, and the output is
   what the sheet rings.
 - An edit's output is a diff, drawn by Tern's `diff` kind: omp's `<marker><line>|text` rows are parsed

@@ -336,13 +336,6 @@ function callDuration(audit: FabricAudit): number | undefined {
 	return audit.startedAt !== undefined && audit.endedAt !== undefined ? audit.endedAt - audit.startedAt : undefined;
 }
 
-/** Two seconds of waiting is where a call's output stops being noise: it opens by itself. */
-const SLOW_CALL_MS = 2000;
-
-function slowCall(audit: FabricAudit): boolean {
-	return (callDuration(audit) ?? 0) >= SLOW_CALL_MS;
-}
-
 /** One hunk as Tern's `diff` kind takes it: the two start numbers and the marked lines. */
 type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
 
@@ -517,7 +510,7 @@ function judgmentAnswer(result: unknown): JudgmentAnswer | undefined {
  * A judgment answers with a verdict and its bullets, not with a JSON dump: the
  * verdict is the badge, every question it answered is one line under it.
  */
-function judgmentOutput(audit: FabricAudit, index: number, options: DescribeOptions): UiNode | undefined {
+function judgmentOutput(audit: FabricAudit, index: number): UiNode | undefined {
 	const answer = judgmentAnswer(audit.result);
 	if (answer === undefined) return undefined;
 	const raw = isRecord(audit.result) ? nonEmpty(audit.result.backend) : undefined;
@@ -532,7 +525,7 @@ function judgmentOutput(audit: FabricAudit, index: number, options: DescribeOpti
 			head,
 			role: "omp-fabric.judgment",
 			collapsible: true,
-			collapsed: options.expanded !== true && !slowCall(audit),
+			collapsed: true,
 		},
 		[
 			node("badge", {
@@ -569,7 +562,7 @@ function treeOf(audit: FabricAudit, text: string, index: number): UiNode | undef
  * clamp and unfold independently -- its preview button opens the enclosing
  * disclosure -- so each block is a disclosure of its own.
  */
-function outputNode(audit: FabricAudit, index: number, options: DescribeOptions, fold: boolean): UiNode | undefined {
+function outputNode(audit: FabricAudit, index: number, fold: boolean): UiNode | undefined {
 	const result = audit.result;
 	if (result === undefined || result === null) {
 		return audit.fromTrace === true ? muted("result not retained after reload") : undefined;
@@ -581,7 +574,7 @@ function outputNode(audit: FabricAudit, index: number, options: DescribeOptions,
 		return muted("result truncated by fabric (" + size + ")");
 	}
 	// A judgment answers with a verdict, not with the JSON envelope it arrived in.
-	const judgment = audit.provider?.toLowerCase() === "judgment" ? judgmentOutput(audit, index, options) : undefined;
+	const judgment = audit.provider?.toLowerCase() === "judgment" ? judgmentOutput(audit, index) : undefined;
 	if (judgment !== undefined) return judgment;
 	// An edit answers with a diff: Tern draws that as a diff, not as a block of text.
 	// When fabric capped that answer only a prefix survives, and a prefix reads as the
@@ -610,7 +603,7 @@ function outputNode(audit: FabricAudit, index: number, options: DescribeOptions,
 			role: "omp-fabric.output",
 			hovercard: text === undefined ? undefined : { k: "ansi", p: { text: cut(text, HOVER_CHARS) } },
 			collapsible: true,
-			collapsed: options.expanded !== true && !slowCall(audit),
+			collapsed: true,
 		},
 		[
 			tree ??
@@ -844,7 +837,7 @@ function meshMembersNode(audit: FabricAudit, index: number): UiNode | undefined 
  * as markdown the way omp's own agent card draws an assignment. A brief is long,
  * so the row starts folded.
  */
-function agentNode(spawn: SpawnedAgent, call: number, options: DescribeOptions): UiNode {
+function agentNode(spawn: SpawnedAgent, call: number): UiNode {
 	const summary = firstLine(spawn.brief.replace(ASSIGNMENT_PREFIX, ""));
 	const children: UiNode[] =
 		spawn.brief === ""
@@ -861,7 +854,7 @@ function agentNode(spawn: SpawnedAgent, call: number, options: DescribeOptions):
 			...(summary === "" ? {} : { task: cut(summary, DETAIL_CHARS) }),
 			status: spawn.status,
 			collapsible: children.length > 0,
-			collapsed: options.expanded !== true,
+			collapsed: true,
 			role: "omp-fabric.agent",
 		},
 		children,
@@ -876,7 +869,7 @@ const WRITE_PREVIEW_CHARS = 16_000;
  * previews it from the arguments, so the card shows the change before it lands.
  * The preview is a prefix of the file, and says so when fabric cut it.
  */
-function writePreview(audit: FabricAudit, index: number, options: DescribeOptions): UiNode | undefined {
+function writePreview(audit: FabricAudit, index: number): UiNode | undefined {
 	if (coreToolName(audit) !== "write" || audit.result !== undefined) return undefined;
 	const content = audit.args?.content;
 	if (typeof content !== "string" || content === "") return undefined;
@@ -895,7 +888,7 @@ function writePreview(audit: FabricAudit, index: number, options: DescribeOption
 			head,
 			role: "omp-fabric.preview",
 			collapsible: true,
-			collapsed: options.expanded !== true,
+			collapsed: true,
 		},
 		[
 			node("code", {
@@ -923,12 +916,12 @@ function headFact(display: ToolDisplay, result: unknown): string | undefined {
  * wonder what went missing. A call that printed nothing says so on its line
  * instead, where the eye already is.
  */
-function callBlock(audit: FabricAudit, index: number, options: DescribeOptions): UiNode[] {
+function callBlock(audit: FabricAudit, index: number): UiNode[] {
 	const display = TOOL_DISPLAY[callLabel(audit).toLowerCase()] ?? { fold: true };
-	const body = outputNode(audit, index, options, display.fold);
+	const body = outputNode(audit, index, display.fold);
 	const spawn = spawnedAgent(audit);
 	// A write still running shows what it is about to write, from the arguments.
-	const preview = writePreview(audit, index, options);
+	const preview = writePreview(audit, index);
 	const head = callHead(audit);
 	// A capped details was not "no output": it was output nobody can vouch for, and
 	// a spawn or a running write is shown by its own block, not by that marker.
@@ -971,10 +964,10 @@ function callBlock(audit: FabricAudit, index: number, options: DescribeOptions):
 	}
 	if (preview !== undefined) nodes.push(preview);
 	// What the model asked the agent for: one row, whose own fold holds the brief.
-	if (spawn !== undefined) nodes.push(agentNode(spawn, index, options));
+	if (spawn !== undefined) nodes.push(agentNode(spawn, index));
 	// An agents call that did not start a child still reports on one, or lists them.
 	const reported = reportedAgent(audit);
-	if (reported !== undefined) nodes.push(agentNode(reported, index, options));
+	if (reported !== undefined) nodes.push(agentNode(reported, index));
 	const listed = agentListNode(audit, index);
 	if (listed !== undefined) nodes.push(listed);
 	const members = meshMembersNode(audit, index);
@@ -1007,10 +1000,9 @@ const COPY_ACTION = { click: "copy", menu: ["copy"], hold: ["copy"] } as const;
 
 /**
  * The program in its own fold: the head counts its lines, opening it shows the
- * whole program, and a click on the code copies it while the card's expand
- * (ctrl+o) opens every fold at once.
+ * whole program, and a click on the code copies it.
  */
-function programBlock(program: string, options: DescribeOptions): UiNode {
+function programBlock(program: string): UiNode {
 	const lines = program.split("\n").length;
 	return node(
 		"section",
@@ -1019,7 +1011,7 @@ function programBlock(program: string, options: DescribeOptions): UiNode {
 			head: [span("program", "muted"), span(" · " + countLabel(lines, "line"), "muted")],
 			role: "omp-fabric.program",
 			collapsible: true,
-			collapsed: options.expanded !== true,
+			collapsed: true,
 		},
 		[
 			node("code", {
@@ -1041,7 +1033,7 @@ function callBlocks(audits: FabricAudit[], phases: string[], options: DescribeOp
 	const shown = audits.slice(0, limit);
 	for (let index = 0; index < shown.length; index += 1) {
 		const audit = shown[index];
-		if (audit !== undefined) nodes.push(...callBlock(audit, index, options));
+		if (audit !== undefined) nodes.push(...callBlock(audit, index));
 	}
 	if (audits.length > shown.length) {
 		nodes.push(muted("… " + countLabel(audits.length - shown.length, "call") + " more"));
@@ -1080,7 +1072,7 @@ export function describeFabricCall(args: FabricExecArgs | undefined, options: De
 	const body: UiNode[] = summary === undefined ? [] : [summary];
 	if (display.description !== undefined) body.push(text([span(display.description, "muted")]));
 	if (program !== "") {
-		body.push(programBlock(program, options));
+		body.push(programBlock(program));
 	} else if (options.argsComplete === false) {
 		body.push(muted("composing…"));
 	}
@@ -1206,7 +1198,7 @@ export function describeFabricResult(
 
 	const summary = summaryRow(program, display.name, facts);
 	const body: UiNode[] = summary === undefined ? [] : [summary];
-	if (program !== "") body.push(programBlock(program, options));
+	if (program !== "") body.push(programBlock(program));
 	body.push(...callBlocks(audits, phases, options));
 	const hint = modelReadHint(contentText(result?.content), audits);
 	if (hint !== undefined) body.push(text([span(hint, "warning")]));

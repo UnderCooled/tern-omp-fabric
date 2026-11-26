@@ -10,6 +10,11 @@
  * so the sheet follows the user's theme.
  */
 
+/* The Program fold shows the code, so hide omp’s one-line argument summary. */
+.sf-tool[data-role="omp.tool.fabric_exec"] .sf-tool-target {
+	display: none;
+}
+
 /* The program, and each call's output: ringed, so each reads as its own object. */
 [data-role="omp-fabric.program"],
 [data-role="omp-fabric.output"] {

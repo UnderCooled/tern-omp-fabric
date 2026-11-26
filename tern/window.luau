@@ -2,9 +2,8 @@
 -- Tern side of tern-omp-fabric: expands the focused omp pane's tool output by typing omp's own
 -- shortcut, Ctrl+O (byte 0x0F).
 --
--- In omp, \15 is bound to app.tools.expand: the chord that widens a collapsed fabric card (program
--- preview, nested calls, return value). This plugin gives that action a palette row so it is
--- reachable without knowing the chord.
+-- In omp, \15 is bound to app.tools.expand: it expands the outer tool card without opening
+-- the Fabric folds. This plugin gives that action a palette row.
 
 local function ompPane(cx: WindowCx): number?
 	local pane = cx.session:focused()
